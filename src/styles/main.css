@@ -1,0 +1,2036 @@
+/* ==========================================================================
+   Arcana · 三维塔罗 —— 全局样式表
+   --------------------------------------------------------------------------
+   设计基调：深空黑底 + 香槟金描边 + 玻璃拟态面板，追求克制、精致、沉浸。
+   层级约定：
+     #stage                 z-index 0    3D 画布
+     .fx-vignette           z-index 1    暗角/噪点装饰
+     #hud / #focus-bar      z-index 20   常驻 HUD
+     #camera-panel /
+     #ask-panel             z-index 30   功能面板
+     #reading-panel         z-index 40   解读面板
+     #gesture-cursor        z-index 45   手势光标
+     #toast                 z-index 60   瞬态提示
+     #help-modal            z-index 70   弹层
+     #loading               z-index 90   加载遮罩
+   ========================================================================== */
+
+/* --------------------------------------------------------------------------
+   1. 设计令牌：把颜色、圆角、阴影、缓动集中定义，方便统一调整视觉风格
+   -------------------------------------------------------------------------- */
+:root {
+  /* 页面底色（最深处的宇宙黑） */
+  --c-bg: #07060b;
+  /* 面板玻璃底色 */
+  --c-glass: rgba(18, 16, 26, 0.66);
+  /* 面板玻璃更浅的描边色 */
+  --c-glass-line: rgba(212, 182, 122, 0.18);
+  /* 主金色（品牌色） */
+  --c-gold: #e3c37a;
+  /* 深金色，用于渐变暗部 */
+  --c-gold-deep: #a8802f;
+  /* 高亮金，用于强调 */
+  --c-gold-hi: #fff0c9;
+  /* 正文文字色 */
+  --c-text: #efeaf6;
+  /* 次级文字色 */
+  --c-text-dim: rgba(239, 234, 246, 0.62);
+  /* 更弱的文字色（辅助说明） */
+  --c-text-faint: rgba(239, 234, 246, 0.38);
+  /* 副色调：幽紫，用于点缀 */
+  --c-violet: #8b6cc9;
+  /* 危险/警示色 */
+  --c-danger: #e07a6a;
+  /* 面板圆角 */
+  --r-panel: 16px;
+  /* 小组件圆角 */
+  --r-chip: 999px;
+  /* 通用投影 */
+  --shadow-panel: 0 24px 60px rgba(0, 0, 0, 0.55), inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  /* 金色发光投影 */
+  --shadow-gold: 0 0 24px rgba(227, 195, 122, 0.28);
+  /* 标准缓动曲线（类似 Apple 的 ease-out-expo 手感） */
+  --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* 弹性缓动曲线，用于强调型入场动画 */
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.42, 1);
+  /* 中文衬线字体栈：优先使用系统内置宋体/明体，营造典雅的占卜氛围 */
+  --font-serif: "Songti SC", "STSong", "Noto Serif SC", "Source Han Serif SC", "SimSun", Georgia, serif;
+  /* 无衬线字体栈：用于界面标签与数据 */
+  --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "PingFang SC", "Hiragino Sans GB",
+    "Microsoft YaHei", "Helvetica Neue", Arial, sans-serif;
+}
+
+/* --------------------------------------------------------------------------
+   2. 基础重置：抹平浏览器默认样式差异
+   -------------------------------------------------------------------------- */
+
+/* 全局盒模型统一为 border-box，避免 padding 撑破布局 */
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+}
+
+/* 清除 body 默认外边距，禁止整页滚动（滚动只发生在面板内部） */
+html,
+body {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+}
+
+/* 页面主背景：纯黑打底，为 WebGL 画布提供兜底颜色 */
+body {
+  /* 背景色（画布未就绪时用户看到的就是它） */
+  background: var(--c-bg);
+  /* 正文文字颜色 */
+  color: var(--c-text);
+  /* 默认使用无衬线字体 */
+  font-family: var(--font-sans);
+  /* 统一字号基准 */
+  font-size: 14px;
+  /* 抗锯齿优化，让浅色文字在深色背景上更柔和 */
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  /* 禁止长按选中文本，避免手势/拖拽操作时误选 */
+  -webkit-user-select: none;
+  user-select: none;
+  /* 禁止移动端点击高亮 */
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* 输入框允许选择文本（覆盖上面的全局禁止） */
+textarea,
+input {
+  -webkit-user-select: text;
+  user-select: text;
+}
+
+/* 消除按钮默认外观 */
+button {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* 关键修正：本文件里多处用 class 设置了 display（如 .modal 的 flex），
+   其优先级高于浏览器默认样式表里的 [hidden] { display: none }，
+   会导致元素虽然带了 hidden 属性却依然铺在页面上拦截点击。
+   因此这里用 !important 强制让 hidden 语义在所有情况下都生效。 */
+[hidden] {
+  display: none !important;
+}
+
+/* 消除 textarea 默认外观 */
+textarea {
+  font-family: inherit;
+  border: none;
+  outline: none;
+  resize: none;
+}
+
+/* 自定义滚动条，与深色主题保持一致 */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+/* 滚动条轨道透明 */
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+/* 滚动条滑块：半透明金色 */
+::-webkit-scrollbar-thumb {
+  background: rgba(227, 195, 122, 0.28);
+  border-radius: 999px;
+}
+/* 滚动条悬停时加深 */
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(227, 195, 122, 0.5);
+}
+
+/* --------------------------------------------------------------------------
+   3. 画布与装饰层
+   -------------------------------------------------------------------------- */
+
+/* 3D 画布铺满整个视口 */
+#stage {
+  /* 绝对定位覆盖全屏 */
+  position: fixed;
+  /* 左上角对齐 */
+  top: 0;
+  left: 0;
+  /* 撑满视口 */
+  width: 100%;
+  height: 100%;
+  /* 位于所有 2D 界面之下 */
+  z-index: 0;
+  /* 画布自身使用块级显示，消除行内元素间隙 */
+  display: block;
+  /* 触摸操作交给脚本处理，禁止浏览器默认手势 */
+  touch-action: none;
+}
+
+/* 暗角装饰层：四角压暗，把视觉焦点收拢到画面中央 */
+.fx-vignette {
+  /* 固定覆盖全屏 */
+  position: fixed;
+  inset: 0;
+  /* 位于画布之上、HUD 之下 */
+  z-index: 1;
+  /* 不拦截鼠标事件 */
+  pointer-events: none;
+  /* 径向渐变模拟镜头暗角，边缘更暗 */
+  background:
+    radial-gradient(120% 90% at 50% 42%, rgba(0, 0, 0, 0) 38%, rgba(0, 0, 0, 0.66) 100%),
+    linear-gradient(to bottom, rgba(0, 0, 0, 0.42) 0%, rgba(0, 0, 0, 0) 20%, rgba(0, 0, 0, 0) 58%, rgba(0, 0, 0, 0.6) 88%, rgba(0, 0, 0, 0.82) 100%);
+  /* 让暗角与画面融合更自然 */
+  mix-blend-mode: multiply;
+}
+
+/* --------------------------------------------------------------------------
+   4. 通用组件：玻璃面板 / 按钮 / 胶囊标签
+   -------------------------------------------------------------------------- */
+
+/* 玻璃拟态面板：毛玻璃 + 细金边 + 内高光 */
+.panel {
+  /* 玻璃底色 */
+  background: var(--c-glass);
+  /* 背景模糊，制造磨砂玻璃质感 */
+  backdrop-filter: blur(22px) saturate(140%);
+  /* Safari 前缀 */
+  -webkit-backdrop-filter: blur(22px) saturate(140%);
+  /* 1px 金色描边 */
+  border: 1px solid var(--c-glass-line);
+  /* 统一圆角 */
+  border-radius: var(--r-panel);
+  /* 面板投影与内高光 */
+  box-shadow: var(--shadow-panel);
+  /* 面板内部内容超出时裁剪圆角 */
+  overflow: hidden;
+}
+
+/* 面板标题栏：标题在左，操作在右 */
+.panel-head {
+  /* 用 flex 两端对齐 */
+  display: flex;
+  /* 垂直居中 */
+  align-items: center;
+  /* 标题与按钮分居两侧 */
+  justify-content: space-between;
+  /* 底部细分割线 */
+  border-bottom: 1px solid rgba(227, 195, 122, 0.12);
+  /* 内边距 */
+  padding: 12px 16px;
+}
+
+/* 面板标题文字：小号大写字距拉开，显得精致 */
+.panel-title {
+  /* 字号 */
+  font-size: 12px;
+  /* 字重 */
+  font-weight: 600;
+  /* 全大写 */
+  text-transform: uppercase;
+  /* 字距拉开 */
+  letter-spacing: 0.18em;
+  /* 使用金色 */
+  color: var(--c-gold);
+}
+
+/* 面板右侧的元信息（如字数统计） */
+.panel-meta {
+  /* 小字号 */
+  font-size: 11px;
+  /* 弱化颜色 */
+  color: var(--c-text-faint);
+  /* 等宽数字，避免计数跳动 */
+  font-variant-numeric: tabular-nums;
+  font-family: var(--font-sans);
+}
+
+/* 小号文字按钮（收起 / 关闭） */
+.mini-btn {
+  /* 小字号 */
+  font-size: 11px;
+  /* 内边距形成点击热区 */
+  padding: 4px 10px;
+  /* 圆角 */
+  border-radius: var(--r-chip);
+  /* 极淡底色 */
+  background: rgba(255, 255, 255, 0.05);
+  /* 弱金色描边 */
+  border: 1px solid rgba(227, 195, 122, 0.2);
+  /* 次级文字色 */
+  color: var(--c-text-dim);
+  /* 过渡动画 */
+  transition: all 0.25s var(--ease);
+}
+
+/* 小按钮悬停态：金色提亮 */
+.mini-btn:hover {
+  color: var(--c-gold);
+  border-color: rgba(227, 195, 122, 0.55);
+  background: rgba(227, 195, 122, 0.1);
+}
+
+/* 通用按钮基类 */
+.btn {
+  /* 需要图标与文字并排时使用 flex */
+  display: inline-flex;
+  /* 垂直居中 */
+  align-items: center;
+  /* 水平居中 */
+  justify-content: center;
+  /* 图标与文字间距 */
+  gap: 8px;
+  /* 内边距 */
+  padding: 10px 18px;
+  /* 胶囊圆角 */
+  border-radius: var(--r-chip);
+  /* 字号 */
+  font-size: 13px;
+  /* 字重 */
+  font-weight: 600;
+  /* 字距 */
+  letter-spacing: 0.04em;
+  /* 过渡动画 */
+  transition: transform 0.2s var(--ease), box-shadow 0.3s var(--ease), background 0.3s var(--ease),
+    border-color 0.3s var(--ease), color 0.3s var(--ease);
+  /* 不换行 */
+  white-space: nowrap;
+}
+
+/* 按钮按下时的轻微回弹，模拟实体按键手感 */
+.btn:active {
+  transform: scale(0.96);
+}
+
+/* 按钮禁用态：降低透明度并禁止交互 */
+.btn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+  transform: none;
+}
+
+/* 主按钮：金色渐变实心 */
+.btn-gold {
+  /* 对角金色渐变，模拟金属反光 */
+  background: linear-gradient(135deg, var(--c-gold-hi) 0%, var(--c-gold) 45%, var(--c-gold-deep) 100%);
+  /* 深色文字保证对比度 */
+  color: #1a1408;
+  /* 金色外发光 */
+  box-shadow: 0 8px 24px rgba(227, 195, 122, 0.28), inset 0 1px 0 rgba(255, 255, 255, 0.6);
+}
+
+/* 主按钮悬停：发光增强并轻微上浮 */
+.btn-gold:hover:not(:disabled) {
+  box-shadow: 0 12px 34px rgba(227, 195, 122, 0.42), inset 0 1px 0 rgba(255, 255, 255, 0.75);
+  transform: translateY(-1px);
+}
+
+/* 次按钮：透明底 + 金色描边 */
+.btn-ghost {
+  /* 极淡底色 */
+  background: rgba(255, 255, 255, 0.04);
+  /* 金色描边 */
+  border: 1px solid rgba(227, 195, 122, 0.22);
+  /* 次级文字色 */
+  color: var(--c-text-dim);
+}
+
+/* 次按钮悬停 */
+.btn-ghost:hover:not(:disabled) {
+  color: var(--c-gold);
+  border-color: rgba(227, 195, 122, 0.6);
+  background: rgba(227, 195, 122, 0.1);
+}
+
+/* 正方形图标按钮（帮助按钮） */
+.btn-square {
+  /* 固定宽高形成正方形 */
+  width: 38px;
+  height: 38px;
+  /* 覆盖 .btn 的横向内边距 */
+  padding: 0;
+  /* 字号略大 */
+  font-size: 15px;
+}
+
+/* 状态胶囊：呼吸指示灯 + 文案 */
+.status-chip {
+  /* 内部横向排布 */
+  display: inline-flex;
+  /* 垂直居中 */
+  align-items: center;
+  /* 间距 */
+  gap: 9px;
+  /* 内边距 */
+  padding: 8px 16px 8px 13px;
+  /* 胶囊圆角 */
+  border-radius: var(--r-chip);
+  /* 玻璃底色 */
+  background: rgba(255, 255, 255, 0.045);
+  /* 细描边 */
+  border: 1px solid rgba(227, 195, 122, 0.16);
+  /* 小字号 */
+  font-size: 12px;
+  /* 次级文字色 */
+  color: var(--c-text-dim);
+  /* 字距 */
+  letter-spacing: 0.05em;
+  /* 宽度变化时平滑过渡 */
+  transition: all 0.4s var(--ease);
+}
+
+/* 状态指示灯：默认金色并带呼吸动画 */
+.status-dot {
+  /* 固定尺寸 */
+  width: 7px;
+  height: 7px;
+  /* 圆形 */
+  border-radius: 50%;
+  /* 金色实心 */
+  background: var(--c-gold);
+  /* 金色光晕 */
+  box-shadow: 0 0 10px var(--c-gold);
+  /* 呼吸动画 */
+  animation: pulse-dot 2.2s var(--ease) infinite;
+}
+
+/* 状态胶囊的三种状态色：进行中用金色，成功用青绿，警告用橙红 */
+.status-chip[data-state="ok"] .status-dot {
+  background: #7ee0b0;
+  box-shadow: 0 0 10px #7ee0b0;
+}
+/* 警告态：橙色 */
+.status-chip[data-state="warn"] .status-dot {
+  background: #e0a86a;
+  box-shadow: 0 0 10px #e0a86a;
+}
+/* 错误态：红色 */
+.status-chip[data-state="error"] .status-dot {
+  background: var(--c-danger);
+  box-shadow: 0 0 10px var(--c-danger);
+}
+
+/* 指示灯呼吸关键帧：明暗与缩放同步变化 */
+@keyframes pulse-dot {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.45;
+    transform: scale(0.78);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   5. 顶部 HUD
+   -------------------------------------------------------------------------- */
+
+/* HUD 容器：固定在顶部，左右两端对齐 */
+#hud {
+  /* 固定在视口顶部 */
+  position: fixed;
+  /* 顶部留出安全区 */
+  top: 0;
+  left: 0;
+  right: 0;
+  /* 层级 */
+  z-index: 20;
+  /* 左右两端对齐 */
+  display: flex;
+  /* 垂直居中 */
+  align-items: center;
+  /* 品牌在左、按钮在右 */
+  justify-content: space-between;
+  /* 内边距（顶部额外留出刘海安全区） */
+  padding: calc(18px + env(safe-area-inset-top, 0px)) 26px 18px 26px;
+  /* 顶部渐变遮罩，让 HUD 与画面自然过渡 */
+  background: linear-gradient(to bottom, rgba(7, 6, 11, 0.85) 0%, rgba(7, 6, 11, 0.4) 55%, rgba(7, 6, 11, 0) 100%);
+  /* 遮罩区域不拦截点击，让下层画布可交互 */
+  pointer-events: none;
+  /* 入场动画 */
+  animation: fade-down 0.9s var(--ease) both;
+}
+
+/* HUD 内的子元素恢复可点击 */
+#hud > * {
+  pointer-events: auto;
+}
+
+/* 品牌区：符号 + 文字 */
+.brand {
+  /* 横向排列 */
+  display: flex;
+  /* 垂直居中 */
+  align-items: center;
+  /* 间距 */
+  gap: 12px;
+}
+
+/* 品牌符号：金色星芒，带轻微旋转光晕 */
+.brand-mark {
+  /* 字号 */
+  font-size: 26px;
+  /* 金色 */
+  color: var(--c-gold);
+  /* 金色发光 */
+  text-shadow: 0 0 18px rgba(227, 195, 122, 0.75);
+  /* 缓慢自转 */
+  animation: spin-slow 18s linear infinite;
+}
+
+/* 品牌主标题 */
+.brand-text h1 {
+  /* 清除默认外边距 */
+  margin: 0;
+  /* 字号 */
+  font-size: 17px;
+  /* 字重 */
+  font-weight: 600;
+  /* 字距拉开，营造高级感 */
+  letter-spacing: 0.32em;
+  /* 使用衬线体 */
+  font-family: var(--font-serif);
+  /* 金色渐变文字 */
+  background: linear-gradient(120deg, var(--c-gold-hi), var(--c-gold) 50%, var(--c-gold-deep));
+  -webkit-background-clip: text;
+  background-clip: text;
+  /* 文字填充透明，让渐变透出 */
+  color: transparent;
+}
+
+/* 品牌副标题 */
+.brand-text p {
+  /* 清除默认外边距 */
+  margin: 3px 0 0 0;
+  /* 小字号 */
+  font-size: 10px;
+  /* 字距 */
+  letter-spacing: 0.24em;
+  /* 极弱文字色 */
+  color: var(--c-text-faint);
+}
+
+/* HUD 右侧操作区 */
+.hud-actions {
+  /* 横向排列 */
+  display: flex;
+  /* 垂直居中 */
+  align-items: center;
+  /* 间距 */
+  gap: 12px;
+}
+
+/* 缓慢自转关键帧 */
+@keyframes spin-slow {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 顶部下滑入场关键帧 */
+@keyframes fade-down {
+  from {
+    opacity: 0;
+    transform: translateY(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   6. 左侧摄像头面板
+   -------------------------------------------------------------------------- */
+
+/* 面板定位在左下角 */
+#camera-panel {
+  /* 固定定位 */
+  position: fixed;
+  /* 距左边距 */
+  left: 26px;
+  /* 距底边距 */
+  bottom: 26px;
+  /* 宽度 */
+  width: 268px;
+  /* 层级 */
+  z-index: 30;
+  /* 面板展开/收起的过渡 */
+  transition: transform 0.5s var(--ease), opacity 0.4s var(--ease);
+  /* 左侧滑入动画 */
+  animation: slide-in-left 0.7s var(--ease) both;
+}
+
+/* 收起状态：整体平移出屏幕左缘（保留 6px 提示条） */
+#camera-panel.is-folded {
+  transform: translateX(calc(-100% + 18px));
+  opacity: 0.85;
+}
+
+/* 摄像头画面容器：固定 4:3 比例 */
+.camera-stage {
+  /* 相对定位，供视频与画布绝对定位 */
+  position: relative;
+  /* 宽高比 4:3 */
+  aspect-ratio: 4 / 3;
+  /* 背景色 */
+  background: #05040a;
+  /* 超出裁剪 */
+  overflow: hidden;
+  /* 底部分割线 */
+  border-bottom: 1px solid rgba(227, 195, 122, 0.12);
+}
+
+/* 摄像头视频：左右镜像，符合“照镜子”的直觉 */
+#hand-video {
+  /* 绝对定位填满容器 */
+  position: absolute;
+  inset: 0;
+  /* 撑满 */
+  width: 100%;
+  height: 100%;
+  /* 等比裁剪填满，避免变形 */
+  object-fit: cover;
+  /* 水平镜像 */
+  transform: scaleX(-1);
+  /* 降低亮度与饱和度，让画面融入整体暗调 */
+  filter: brightness(0.72) saturate(0.7) contrast(1.05);
+}
+
+/* 关键点叠加画布：与视频同层叠放 */
+#hand-overlay {
+  /* 绝对定位填满容器 */
+  position: absolute;
+  inset: 0;
+  /* 撑满 */
+  width: 100%;
+  height: 100%;
+  /* 不拦截鼠标事件 */
+  pointer-events: none;
+}
+
+/* 摄像头角标：显示当前识别到的手势 */
+.camera-badge {
+  /* 绝对定位到右下角 */
+  position: absolute;
+  right: 8px;
+  bottom: 8px;
+  /* 内边距 */
+  padding: 4px 10px;
+  /* 胶囊圆角 */
+  border-radius: var(--r-chip);
+  /* 半透明深色底 */
+  background: rgba(7, 6, 11, 0.72);
+  /* 金色描边 */
+  border: 1px solid rgba(227, 195, 122, 0.35);
+  /* 小字号 */
+  font-size: 11px;
+  /* 金色文字 */
+  color: var(--c-gold);
+  /* 字距 */
+  letter-spacing: 0.06em;
+  /* 背景模糊 */
+  backdrop-filter: blur(8px);
+}
+
+/* 手势图例容器 */
+.gesture-legend {
+  /* 上下内边距 */
+  padding: 12px 14px 14px 14px;
+  /* 纵向排列 */
+  display: flex;
+  /* 纵向间距 */
+  flex-direction: column;
+  gap: 10px;
+}
+
+/* 单条图例 */
+.legend-item {
+  /* 横向排列 */
+  display: flex;
+  /* 垂直居中 */
+  align-items: center;
+  /* 间距 */
+  gap: 10px;
+}
+
+/* 图例中的手势图标 */
+.legend-glyph {
+  /* 字号 */
+  font-size: 17px;
+  /* 固定宽度让两行文字对齐 */
+  width: 22px;
+  /* 居中 */
+  text-align: center;
+  /* 轻微发光 */
+  filter: drop-shadow(0 0 6px rgba(227, 195, 122, 0.5));
+}
+
+/* 图例文字容器：两行竖排 */
+.legend-text {
+  /* 纵向排列 */
+  display: flex;
+  /* 纵向排列 */
+  flex-direction: column;
+  /* 行距紧凑 */
+  gap: 2px;
+}
+
+/* 图例主文案 */
+.legend-text b {
+  /* 字号 */
+  font-size: 12px;
+  /* 字重 */
+  font-weight: 600;
+  /* 正文色 */
+  color: var(--c-text);
+}
+
+/* 图例副文案 */
+.legend-text em {
+  /* 字号 */
+  font-size: 11px;
+  /* 常规字重 */
+  font-style: normal;
+  /* 弱化颜色 */
+  color: var(--c-text-faint);
+}
+
+/* --------------------------------------------------------------------------
+   7. 底部中央聚焦提示条
+   -------------------------------------------------------------------------- */
+
+/* 容器：固定在底部中央 */
+#focus-bar {
+  /* 固定定位 */
+  position: fixed;
+  /* 水平居中：左右各留 0，靠 margin auto 居中 */
+  left: 50%;
+  /* 距底边距（避开安全区） */
+  bottom: calc(30px + env(safe-area-inset-bottom, 0px));
+  /* 通过 translateX 精确居中 */
+  transform: translateX(-50%);
+  /* 层级 */
+  z-index: 20;
+  /* 纵向排列 */
+  display: flex;
+  /* 纵向排列 */
+  flex-direction: column;
+  /* 垂直居中 */
+  align-items: center;
+  /* 间距 */
+  gap: 10px;
+  /* 不拦截鼠标事件，避免挡住画布拖拽 */
+  pointer-events: none;
+  /* 底部滑入动画 */
+  animation: fade-up 1s var(--ease) 0.2s both;
+}
+
+/* 三个牌位指示点容器 */
+.slot-dots {
+  /* 横向排列 */
+  display: flex;
+  /* 垂直居中 */
+  align-items: center;
+  /* 间距 */
+  gap: 14px;
+}
+
+/* 单个牌位指示点 */
+.slot-dot {
+  /* 相对定位，便于放置内部编号 */
+  position: relative;
+  /* 固定尺寸 */
+  width: 12px;
+  height: 12px;
+  /* 圆形 */
+  border-radius: 50%;
+  /* 默认空心：透明底 + 金色描边 */
+  background: transparent;
+  /* 金色描边 */
+  border: 1.5px solid rgba(227, 195, 122, 0.5);
+  /* 过渡 */
+  transition: all 0.5s var(--ease-spring);
+}
+
+/* 已填充的牌位：金色实心 + 发光 */
+.slot-dot.is-filled {
+  /* 金色实心 */
+  background: var(--c-gold);
+  /* 金色描边 */
+  border-color: var(--c-gold-hi);
+  /* 光晕 */
+  box-shadow: 0 0 14px rgba(227, 195, 122, 0.85);
+  /* 放大强调 */
+  transform: scale(1.25);
+}
+
+/* 当前牌位：脉冲提示 */
+.slot-dot.is-active {
+  /* 描边更亮 */
+  border-color: var(--c-gold-hi);
+  /* 持续脉冲 */
+  animation: pulse-ring 1.8s var(--ease) infinite;
+}
+
+/* 牌位标签（现状 / 转折 / 走向） */
+.slot-dot::after {
+  /* 伪元素承载标签文字 */
+  content: attr(data-label);
+  /* 绝对定位到圆点下方 */
+  position: absolute;
+  /* 顶部对齐圆点底部 */
+  top: calc(100% + 7px);
+  /* 水平居中 */
+  left: 50%;
+  /* 精确居中 */
+  transform: translateX(-50%);
+  /* 不换行 */
+  white-space: nowrap;
+  /* 字号 */
+  font-size: 10px;
+  /* 字距 */
+  letter-spacing: 0.16em;
+  /* 弱文字色 */
+  color: var(--c-text-faint);
+  /* 过渡 */
+  transition: color 0.4s var(--ease);
+}
+
+/* 激活牌位的标签提亮 */
+.slot-dot.is-active::after,
+.slot-dot.is-filled::after {
+  color: var(--c-gold);
+}
+
+/* 操作提示文案 */
+.focus-hint {
+  /* 清除默认外边距 */
+  /* 上方留出空间，避免与牌位指示点下方的标签文字重叠 */
+  margin: 16px 0 0 0;
+  /* 字号 */
+  font-size: 12px;
+  /* 字距 */
+  letter-spacing: 0.14em;
+  /* 次级文字色 */
+  color: var(--c-text-dim);
+  /* 背景胶囊，提升在复杂画面上的可读性 */
+  padding: 7px 18px;
+  /* 胶囊圆角 */
+  border-radius: var(--r-chip);
+  /* 半透明底色 */
+  background: rgba(7, 6, 11, 0.55);
+  /* 背景模糊 */
+  backdrop-filter: blur(12px);
+  /* 细描边 */
+  border: 1px solid rgba(227, 195, 122, 0.14);
+  /* 文案切换时平滑过渡 */
+  transition: opacity 0.3s var(--ease);
+  /* 文字居中 */
+  text-align: center;
+}
+
+/* 牌位脉冲关键帧 */
+@keyframes pulse-ring {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgba(227, 195, 122, 0.5);
+  }
+  60% {
+    box-shadow: 0 0 0 9px rgba(227, 195, 122, 0);
+  }
+}
+
+/* 底部上滑入场关键帧 */
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateX(-50%) translateY(18px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(-50%) translateY(0);
+  }
+}
+
+/* 左侧滑入入场关键帧 */
+@keyframes slide-in-left {
+  from {
+    opacity: 0;
+    transform: translateX(-28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* --------------------------------------------------------------------------
+   8. 右侧提问面板
+   -------------------------------------------------------------------------- */
+
+/* 提问面板定位在右下角 */
+#ask-panel {
+  /* 固定定位 */
+  position: fixed;
+  /* 距右边缘 */
+  right: 26px;
+  /* 距底边缘 */
+  bottom: 26px;
+  /* 宽度 */
+  width: 330px;
+  /* 层级 */
+  z-index: 30;
+  /* 右侧滑入动画 */
+  animation: slide-in-right 0.8s var(--ease) 0.1s both;
+  /* 状态切换时的过渡（解读面板打开时会滑出） */
+  transition: transform 0.6s var(--ease), opacity 0.5s var(--ease);
+}
+
+/* 输入框 */
+#question-input {
+  /* 宽度撑满 */
+  width: 100%;
+  /* 内边距 */
+  padding: 16px;
+  /* 透明背景，与面板融为一体 */
+  background: transparent;
+  /* 文字颜色 */
+  color: var(--c-text);
+  /* 字号（略大，便于长句阅读） */
+  font-size: 14px;
+  /* 行高 */
+  line-height: 1.75;
+  /* 使用衬线体，与占卜主题契合 */
+  font-family: var(--font-serif);
+  /* 字距 */
+  letter-spacing: 0.02em;
+  /* 限制最小高度 */
+  min-height: 78px;
+  /* 限制最大高度，超出滚动 */
+  max-height: 140px;
+  /* 纵向可滚动 */
+  overflow-y: auto;
+  /* 底部细分割线 */
+  border-bottom: 1px solid rgba(227, 195, 122, 0.12);
+}
+
+/* 输入框占位文字颜色 */
+#question-input::placeholder {
+  /* 极弱文字色 */
+  color: rgba(239, 234, 246, 0.26);
+  /* 行高与正文一致 */
+  line-height: 1.75;
+}
+
+/* 快捷问题标签容器 */
+.quick-asks {
+  /* 横向排列并允许换行 */
+  display: flex;
+  /* 换行 */
+  flex-wrap: wrap;
+  /* 间距 */
+  gap: 7px;
+  /* 内边距 */
+  padding: 12px 16px 4px 16px;
+}
+
+/* 单个快捷问题标签 */
+.quick-ask {
+  /* 内边距 */
+  padding: 5px 11px;
+  /* 胶囊圆角 */
+  border-radius: var(--r-chip);
+  /* 极淡底色 */
+  background: rgba(255, 255, 255, 0.045);
+  /* 细描边 */
+  border: 1px solid rgba(227, 195, 122, 0.16);
+  /* 小字号 */
+  font-size: 11px;
+  /* 次级文字色 */
+  color: var(--c-text-dim);
+  /* 过渡 */
+  transition: all 0.25s var(--ease);
+}
+
+/* 快捷标签悬停 */
+.quick-ask:hover {
+  /* 金色文字 */
+  color: var(--c-gold);
+  /* 金色描边 */
+  border-color: rgba(227, 195, 122, 0.5);
+  /* 淡金色底 */
+  background: rgba(227, 195, 122, 0.1);
+}
+
+/* 操作按钮组 */
+.ask-actions {
+  /* 横向排列 */
+  display: flex;
+  /* 间距 */
+  gap: 10px;
+  /* 内边距 */
+  padding: 14px 16px 16px 16px;
+}
+
+/* 组内按钮平分剩余宽度，主按钮权重更高 */
+.ask-actions .btn {
+  /* 允许伸缩 */
+  flex: 1;
+}
+/* 主按钮占两份宽度 */
+.ask-actions .btn-gold {
+  flex: 1.4;
+}
+
+/* 右侧滑入入场关键帧 */
+@keyframes slide-in-right {
+  from {
+    opacity: 0;
+    transform: translateX(28px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+/* 当解读面板打开时，提问面板向右滑出视口 */
+body.is-reading #ask-panel {
+  /* 滑出屏幕右侧 */
+  transform: translateX(calc(100% + 40px));
+  /* 淡出 */
+  opacity: 0;
+  /* 不拦截点击 */
+  pointer-events: none;
+}
+
+/* --------------------------------------------------------------------------
+   9. 右侧解读面板
+   -------------------------------------------------------------------------- */
+
+/* 解读面板：右侧整块长条，带滚动 */
+#reading-panel {
+  /* 固定定位 */
+  position: fixed;
+  /* 距顶部（避开 HUD） */
+  top: 96px;
+  /* 距右边缘 */
+  right: 26px;
+  /* 距底边缘 */
+  bottom: 26px;
+  /* 宽度 */
+  width: 400px;
+  /* 纵向弹性布局：标题栏固定，正文滚动 */
+  display: flex;
+  /* 纵向排列 */
+  flex-direction: column;
+  /* 层级高于提问面板 */
+  z-index: 40;
+  /* 滑入动画 */
+  animation: reading-in 0.7s var(--ease) both;
+}
+
+/* 解读面板入场：从右侧滑入并轻微缩放 */
+@keyframes reading-in {
+  from {
+    opacity: 0;
+    transform: translateX(40px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
+  }
+}
+
+/* 解读正文滚动区 */
+.reading-body {
+  /* 占据剩余高度 */
+  flex: 1;
+  /* 纵向滚动 */
+  overflow-y: auto;
+  /* 内边距 */
+  padding: 18px 20px 26px 20px;
+  /* 滚动惯性（iOS） */
+  -webkit-overflow-scrolling: touch;
+}
+
+/* 解读面板中的问题回显 */
+.reading-question {
+  /* 左侧金色竖线形成引用样式 */
+  border-left: 2px solid var(--c-gold);
+  /* 内边距 */
+  padding: 2px 0 2px 12px;
+  /* 下边距 */
+  margin-bottom: 18px;
+  /* 弱化文字色 */
+  color: var(--c-text-dim);
+  /* 字号 */
+  font-size: 13px;
+  /* 行高 */
+  line-height: 1.7;
+  /* 衬线体 */
+  font-family: var(--font-serif);
+}
+
+/* 解读面板中的小节标题 */
+.reading-section-title {
+  /* 上边距 */
+  margin: 22px 0 10px 0;
+  /* 清除默认下边距 */
+  /* 字号 */
+  font-size: 12px;
+  /* 字重 */
+  font-weight: 600;
+  /* 字距 */
+  letter-spacing: 0.2em;
+  /* 金色 */
+  color: var(--c-gold);
+  /* 全大写 */
+  text-transform: uppercase;
+  /* 下方细金线 */
+  border-bottom: 1px solid rgba(227, 195, 122, 0.16);
+  /* 内边距 */
+  padding-bottom: 7px;
+}
+
+/* 解读正文段落 */
+.reading-paragraph {
+  /* 外边距 */
+  margin: 0 0 13px 0;
+  /* 行高，中文需要更宽松 */
+  line-height: 1.95;
+  /* 字号 */
+  font-size: 13.5px;
+  /* 正文色 */
+  color: rgba(239, 234, 246, 0.86);
+  /* 衬线体 */
+  font-family: var(--font-serif);
+  /* 中英混排时自动加间距 */
+  text-align: justify;
+  /* 首行不缩进，保持现代排版 */
+  text-indent: 0;
+}
+
+/* 三张牌概览卡片列表 */
+.card-summary-list {
+  /* 纵向排列 */
+  display: flex;
+  /* 纵向 */
+  flex-direction: column;
+  /* 间距 */
+  gap: 10px;
+}
+
+/* 单张牌概览 */
+.card-summary {
+  /* 横向排列 */
+  display: flex;
+  /* 间距 */
+  gap: 12px;
+  /* 内边距 */
+  padding: 11px 13px;
+  /* 圆角 */
+  border-radius: 12px;
+  /* 极淡底色 */
+  background: rgba(255, 255, 255, 0.035);
+  /* 细描边 */
+  border: 1px solid rgba(227, 195, 122, 0.14);
+  /* 过渡 */
+  transition: all 0.3s var(--ease);
+}
+
+/* 概览卡悬停：描边提亮 */
+.card-summary:hover {
+  border-color: rgba(227, 195, 122, 0.4);
+  background: rgba(227, 195, 122, 0.07);
+}
+
+/* 概览卡左侧的牌位标记 */
+.card-summary-pos {
+  /* 固定宽度 */
+  width: 34px;
+  /* 不收缩 */
+  flex-shrink: 0;
+  /* 字号 */
+  font-size: 10px;
+  /* 字距 */
+  letter-spacing: 0.14em;
+  /* 金色 */
+  color: var(--c-gold);
+  /* 顶部对齐 */
+  align-self: flex-start;
+  /* 上内边距让文字与标题基线对齐 */
+  padding-top: 3px;
+  /* 右侧细线分隔 */
+  border-right: 1px solid rgba(227, 195, 122, 0.2);
+  /* 右内边距 */
+  padding-right: 10px;
+}
+
+/* 概览卡右侧内容 */
+.card-summary-content {
+  /* 占据剩余宽度 */
+  flex: 1;
+  /* 防止长文本撑破 */
+  min-width: 0;
+}
+
+/* 概览卡标题行 */
+.card-summary-title {
+  /* 横向排列 */
+  display: flex;
+  /* 两端对齐 */
+  align-items: baseline;
+  /* 间距 */
+  gap: 8px;
+  /* 下边距 */
+  margin-bottom: 5px;
+}
+
+/* 牌名 */
+.card-summary-name {
+  /* 字号 */
+  font-size: 14px;
+  /* 字重 */
+  font-weight: 600;
+  /* 金色 */
+  color: var(--c-gold);
+  /* 衬线体 */
+  font-family: var(--font-serif);
+  /* 字距 */
+  letter-spacing: 0.06em;
+}
+
+/* 英文名 */
+.card-summary-en {
+  /* 字号 */
+  font-size: 10px;
+  /* 字距 */
+  letter-spacing: 0.1em;
+  /* 弱化 */
+  color: var(--c-text-faint);
+  /* 全大写 */
+  text-transform: uppercase;
+}
+
+/* 正逆位标签 */
+.card-summary-orient {
+  /* 自动推到最右 */
+  margin-left: auto;
+  /* 内边距 */
+  padding: 2px 8px;
+  /* 胶囊圆角 */
+  border-radius: var(--r-chip);
+  /* 小字号 */
+  font-size: 10px;
+  /* 字距 */
+  letter-spacing: 0.08em;
+  /* 正位：淡金色 */
+  color: var(--c-gold);
+  /* 描边 */
+  border: 1px solid rgba(227, 195, 122, 0.35);
+  /* 背景 */
+  background: rgba(227, 195, 122, 0.1);
+}
+
+/* 逆位标签：改用幽紫以作区分 */
+.card-summary-orient.is-reversed {
+  /* 紫色文字 */
+  color: #b79bec;
+  /* 紫色描边 */
+  border-color: rgba(183, 155, 236, 0.4);
+  /* 紫色底色 */
+  background: rgba(139, 108, 201, 0.14);
+}
+
+/* 概览卡关键词 */
+.card-summary-keywords {
+  /* 字号 */
+  font-size: 11.5px;
+  /* 行高 */
+  line-height: 1.7;
+  /* 次级文字色 */
+  color: var(--c-text-dim);
+}
+
+/* 能量条容器 */
+.energy-meter {
+  /* 相对定位 */
+  position: relative;
+  /* 高度 */
+  height: 6px;
+  /* 圆角 */
+  border-radius: 999px;
+  /* 深色轨道 */
+  background: rgba(255, 255, 255, 0.07);
+  /* 溢出裁剪 */
+  overflow: hidden;
+  /* 上边距 */
+  margin: 10px 0 6px 0;
+}
+
+/* 能量条填充：金色渐变，宽度由脚本设置 */
+.energy-meter i {
+  /* 绝对定位 */
+  position: absolute;
+  /* 左对齐 */
+  left: 0;
+  /* 顶部对齐 */
+  top: 0;
+  /* 高度撑满 */
+  height: 100%;
+  /* 圆角 */
+  border-radius: 999px;
+  /* 金色渐变 */
+  background: linear-gradient(90deg, var(--c-gold-deep), var(--c-gold), var(--c-gold-hi));
+  /* 宽度过渡 */
+  transition: width 1.2s var(--ease);
+  /* 发光 */
+  box-shadow: 0 0 12px rgba(227, 195, 122, 0.6);
+}
+
+/* 能量说明文字 */
+.energy-caption {
+  /* 字号 */
+  font-size: 11px;
+  /* 弱文字色 */
+  color: var(--c-text-faint);
+  /* 字距 */
+  letter-spacing: 0.08em;
+}
+
+/* 建议条目列表 */
+.advice-list {
+  /* 清除默认样式 */
+  margin: 0;
+  /* 清除默认内边距 */
+  padding: 0;
+  /* 去掉列表符号 */
+  list-style: none;
+  /* 纵向排列 */
+  display: flex;
+  /* 纵向 */
+  flex-direction: column;
+  /* 间距 */
+  gap: 10px;
+}
+
+/* 单条建议 */
+.advice-list li {
+  /* 相对定位，用于放置序号 */
+  position: relative;
+  /* 左侧留出序号空间 */
+  padding-left: 26px;
+  /* 行高 */
+  line-height: 1.85;
+  /* 字号 */
+  font-size: 13px;
+  /* 正文色 */
+  color: rgba(239, 234, 246, 0.85);
+  /* 衬线体 */
+  font-family: var(--font-serif);
+}
+
+/* 建议序号：用金色圆点数字 */
+.advice-list li::before {
+  /* 计数器内容，由脚本写入 data-index */
+  content: attr(data-index);
+  /* 绝对定位 */
+  position: absolute;
+  /* 左对齐 */
+  left: 0;
+  /* 顶部对齐 */
+  top: 1px;
+  /* 固定尺寸 */
+  width: 17px;
+  height: 17px;
+  /* 圆形 */
+  border-radius: 50%;
+  /* 金色描边 */
+  border: 1px solid rgba(227, 195, 122, 0.5);
+  /* 金色文字 */
+  color: var(--c-gold);
+  /* 小字号 */
+  font-size: 10px;
+  /* 行高等于高度，实现垂直居中 */
+  line-height: 16px;
+  /* 水平居中 */
+  text-align: center;
+  /* 使用无衬线体 */
+  font-family: var(--font-sans);
+}
+
+/* 解读面板底部的「重新开始」按钮：
+   解读展开时提问面板会滑出屏幕，这里必须提供一个出口，否则用户会被困住 */
+.reading-restart {
+  /* 撑满正文宽度 */
+  width: 100%;
+  /* 与上方内容拉开距离 */
+  margin-top: 26px;
+}
+
+/* 警示提示块 */
+.caution-block {
+  /* 内边距 */
+  padding: 12px 14px;
+  /* 圆角 */
+  border-radius: 12px;
+  /* 非常淡的红底 */
+  background: rgba(224, 122, 106, 0.08);
+  /* 左侧红色竖线 */
+  border-left: 2px solid rgba(224, 122, 106, 0.7);
+  /* 行高 */
+  line-height: 1.85;
+  /* 字号 */
+  font-size: 13px;
+  /* 文字色偏暖 */
+  color: rgba(240, 200, 192, 0.9);
+  /* 衬线体 */
+  font-family: var(--font-serif);
+}
+
+/* 解读生成中的加载提示 */
+.reading-loading {
+  /* 纵向排列 */
+  display: flex;
+  /* 纵向 */
+  flex-direction: column;
+  /* 垂直居中 */
+  align-items: center;
+  /* 横向居中 */
+  justify-content: center;
+  /* 间距 */
+  gap: 14px;
+  /* 上内边距 */
+  padding: 60px 0;
+  /* 弱文字色 */
+  color: var(--c-text-dim);
+  /* 字号 */
+  font-size: 13px;
+  /* 字距 */
+  letter-spacing: 0.14em;
+}
+
+/* 加载中的旋转金环 */
+.reading-loading .spinner {
+  /* 固定尺寸 */
+  width: 34px;
+  height: 34px;
+  /* 圆形描边，留一处缺口形成旋转感 */
+  border: 2px solid rgba(227, 195, 122, 0.18);
+  /* 顶部亮色 */
+  border-top-color: var(--c-gold);
+  /* 圆形 */
+  border-radius: 50%;
+  /* 旋转动画 */
+  animation: spin-slow 0.9s linear infinite;
+}
+
+/* --------------------------------------------------------------------------
+   10. 手势光标
+   -------------------------------------------------------------------------- */
+
+/* 光标容器：由脚本设置 translate 定位 */
+#gesture-cursor {
+  /* 固定定位 */
+  position: fixed;
+  /* 左上角为锚点 */
+  top: 0;
+  left: 0;
+  /* 层级 */
+  z-index: 45;
+  /* 不拦截鼠标 */
+  pointer-events: none;
+  /* 变换过渡（无过渡，位置由脚本每帧直接设置以避免拖影） */
+  will-change: transform;
+}
+
+/* 外环 */
+.cursor-ring {
+  /* 绝对定位居中 */
+  position: absolute;
+  /* 以中心对齐锚点 */
+  left: 0;
+  top: 0;
+  /* 固定尺寸 */
+  width: 46px;
+  height: 46px;
+  /* 通过负外边距实现居中 */
+  margin: -23px 0 0 -23px;
+  /* 圆形 */
+  border-radius: 50%;
+  /* 金色描边 */
+  border: 1.5px solid rgba(227, 195, 122, 0.75);
+  /* 金色外发光 */
+  box-shadow: 0 0 22px rgba(227, 195, 122, 0.35), inset 0 0 18px rgba(227, 195, 122, 0.2);
+  /* 缓慢呼吸 */
+  animation: cursor-breathe 2.4s var(--ease) infinite;
+}
+
+/* 内点 */
+.cursor-core {
+  /* 绝对定位居中 */
+  position: absolute;
+  /* 以中心对齐锚点 */
+  left: 0;
+  top: 0;
+  /* 固定尺寸 */
+  width: 6px;
+  height: 6px;
+  /* 居中 */
+  margin: -3px 0 0 -3px;
+  /* 圆形 */
+  border-radius: 50%;
+  /* 金色实心 */
+  background: var(--c-gold-hi);
+  /* 发光 */
+  box-shadow: 0 0 12px var(--c-gold);
+}
+
+/* 光标收缩态：握拳确认时收缩，形成“按下”的反馈 */
+#gesture-cursor.is-fist .cursor-ring {
+  /* 缩放 */
+  transform: scale(0.55);
+  /* 描边加粗且更亮 */
+  border-color: var(--c-gold-hi);
+  /* 发光增强 */
+  box-shadow: 0 0 34px rgba(227, 195, 122, 0.75), inset 0 0 22px rgba(227, 195, 122, 0.5);
+  /* 收缩过渡 */
+  transition: transform 0.16s var(--ease), box-shadow 0.16s var(--ease);
+}
+
+/* 光标呼吸关键帧 */
+@keyframes cursor-breathe {
+  0%,
+  100% {
+    transform: scale(1);
+    opacity: 0.9;
+  }
+  50% {
+    transform: scale(1.12);
+    opacity: 0.62;
+  }
+}
+
+/* --------------------------------------------------------------------------
+   11. 瞬态提示条
+   -------------------------------------------------------------------------- */
+
+/* toast 容器：固定在底部中央偏上的位置 */
+#toast {
+  /* 固定定位 */
+  position: fixed;
+  /* 水平居中 */
+  left: 50%;
+  /* 距底部 */
+  bottom: 120px;
+  /* 层级 */
+  z-index: 60;
+  /* 初始隐藏：向下偏移并透明 */
+  transform: translate(-50%, 14px);
+  /* 初始透明 */
+  opacity: 0;
+  /* 不拦截鼠标 */
+  pointer-events: none;
+  /* 内边距 */
+  padding: 10px 20px;
+  /* 胶囊圆角 */
+  border-radius: var(--r-chip);
+  /* 玻璃底 */
+  background: rgba(18, 16, 26, 0.88);
+  /* 背景模糊 */
+  backdrop-filter: blur(16px);
+  /* 金色描边 */
+  border: 1px solid rgba(227, 195, 122, 0.35);
+  /* 金色文字 */
+  color: var(--c-gold);
+  /* 字号 */
+  font-size: 12.5px;
+  /* 字距 */
+  letter-spacing: 0.12em;
+  /* 投影 */
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.6);
+  /* 显示/隐藏过渡 */
+  transition: opacity 0.35s var(--ease), transform 0.45s var(--ease-spring);
+}
+
+/* toast 显示态 */
+#toast.is-visible {
+  /* 回到原位 */
+  transform: translate(-50%, 0);
+  /* 完全不透明 */
+  opacity: 1;
+}
+
+/* --------------------------------------------------------------------------
+   12. 弹层
+   -------------------------------------------------------------------------- */
+
+/* 弹层遮罩 */
+.modal {
+  /* 固定覆盖全屏 */
+  position: fixed;
+  inset: 0;
+  /* 层级 */
+  z-index: 70;
+  /* 居中内容 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 半透明深色遮罩 */
+  background: rgba(4, 3, 8, 0.72);
+  /* 背景模糊 */
+  backdrop-filter: blur(10px);
+  /* 内边距 */
+  padding: 24px;
+  /* 入场动画 */
+  animation: modal-fade 0.35s var(--ease) both;
+}
+
+/* 遮罩淡入关键帧 */
+@keyframes modal-fade {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+/* 弹层卡片 */
+.modal-card {
+  /* 最大宽度 */
+  width: 100%;
+  /* 限制宽度 */
+  max-width: 560px;
+  /* 最大高度 */
+  max-height: 82vh;
+  /* 超出滚动 */
+  overflow-y: auto;
+  /* 内边距 */
+  padding: 30px 34px 26px 34px;
+  /* 入场动画 */
+  animation: modal-pop 0.5s var(--ease-spring) both;
+}
+
+/* 弹层弹出关键帧 */
+@keyframes modal-pop {
+  from {
+    opacity: 0;
+    transform: translateY(20px) scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* 弹层主标题 */
+.modal-card h2 {
+  /* 外边距 */
+  margin: 0 0 18px 0;
+  /* 字号 */
+  font-size: 20px;
+  /* 字距 */
+  letter-spacing: 0.16em;
+  /* 衬线体 */
+  font-family: var(--font-serif);
+  /* 金色文字 */
+  color: var(--c-gold);
+}
+
+/* 弹层次级标题 */
+.modal-card h3 {
+  /* 外边距 */
+  margin: 22px 0 10px 0;
+  /* 字号 */
+  font-size: 13px;
+  /* 字距 */
+  letter-spacing: 0.16em;
+  /* 弱金描边感的文字色 */
+  color: rgba(227, 195, 122, 0.8);
+  /* 无衬线 */
+  font-family: var(--font-sans);
+}
+
+/* 弹层列表 */
+.help-list {
+  /* 外边距 */
+  margin: 0;
+  /* 内边距 */
+  padding-left: 20px;
+  /* 行高 */
+  line-height: 2;
+  /* 字号 */
+  font-size: 13px;
+  /* 文字色 */
+  color: rgba(239, 234, 246, 0.82);
+  /* 衬线体 */
+  font-family: var(--font-serif);
+}
+
+/* 列表项加粗部分（用于强调操作名） */
+.help-list b {
+  /* 金色 */
+  color: var(--c-gold);
+  /* 字重 */
+  font-weight: 600;
+  /* 无衬线，让操作名更醒目 */
+  font-family: var(--font-sans);
+  /* 字号略小 */
+  font-size: 12px;
+  /* 字距 */
+  letter-spacing: 0.06em;
+}
+
+/* 弹层底部按钮居中 */
+.modal-card .btn {
+  /* 上边距 */
+  margin-top: 24px;
+  /* 块级显示以便居中 */
+  display: flex;
+  /* 撑满宽度 */
+  width: 100%;
+}
+
+/* --------------------------------------------------------------------------
+   13. 加载遮罩
+   -------------------------------------------------------------------------- */
+
+/* 加载遮罩：覆盖整个视口 */
+#loading {
+  /* 固定覆盖 */
+  position: fixed;
+  inset: 0;
+  /* 最高层级 */
+  z-index: 90;
+  /* 纯深色背景 */
+  background: radial-gradient(80% 60% at 50% 45%, #12101c 0%, #07060b 62%, #050409 100%);
+  /* 居中内容 */
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  /* 隐藏时淡出 */
+  transition: opacity 0.9s var(--ease), visibility 0.9s;
+}
+
+/* 加载完成后的隐藏态 */
+#loading.is-done {
+  /* 完全透明 */
+  opacity: 0;
+  /* 不可见且不拦截事件 */
+  visibility: hidden;
+  /* 不拦截鼠标 */
+  pointer-events: none;
+}
+
+/* 加载内容容器 */
+.loading-inner {
+  /* 纵向排列 */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  /* 间距 */
+  gap: 20px;
+  /* 宽度 */
+  width: 260px;
+}
+
+/* 旋转符文环容器 */
+.loading-sigil {
+  /* 相对定位 */
+  position: relative;
+  /* 固定尺寸 */
+  width: 108px;
+  height: 108px;
+}
+
+/* 符文环通用样式 */
+.sigil-ring {
+  /* 绝对定位居中 */
+  position: absolute;
+  inset: 0;
+  /* 圆形 */
+  border-radius: 50%;
+  /* 默认无边框 */
+  border: 1px solid transparent;
+}
+
+/* 外层环：金色虚线，顺时针旋转 */
+.sigil-ring.outer {
+  /* 金色虚线描边 */
+  border-color: rgba(227, 195, 122, 0.55);
+  border-style: dashed;
+  /* 顺时针旋转 */
+  animation: spin-slow 9s linear infinite;
+}
+
+/* 内层环：紫色点线，逆时针旋转 */
+.sigil-ring.inner {
+  /* 向内收缩 */
+  inset: 16px;
+  /* 紫色点线 */
+  border-color: rgba(139, 108, 201, 0.6);
+  border-style: dotted;
+  /* 逆时针旋转 */
+  animation: spin-slow 6s linear infinite reverse;
+}
+
+/* 中心星芒 */
+.sigil-core {
+  /* 绝对定位居中 */
+  position: absolute;
+  inset: 0;
+  /* 水平居中 */
+  text-align: center;
+  /* 行高等于容器高度实现垂直居中 */
+  line-height: 108px;
+  /* 字号 */
+  font-size: 30px;
+  /* 金色 */
+  color: var(--c-gold);
+  /* 强烈金色发光 */
+  text-shadow: 0 0 26px rgba(227, 195, 122, 0.9), 0 0 60px rgba(227, 195, 122, 0.4);
+  /* 呼吸动画 */
+  animation: pulse-dot 2.6s var(--ease) infinite;
+}
+
+/* 进度条轨道 */
+.loading-bar {
+  /* 宽度撑满 */
+  width: 100%;
+  /* 高度 */
+  height: 2px;
+  /* 深色轨道 */
+  background: rgba(255, 255, 255, 0.1);
+  /* 圆角 */
+  border-radius: 999px;
+  /* 溢出裁剪 */
+  overflow: hidden;
+}
+
+/* 进度条填充 */
+#loading-bar-fill {
+  /* 块级以便设置宽度 */
+  display: block;
+  /* 初始宽度 0 */
+  width: 0%;
+  /* 高度撑满 */
+  height: 100%;
+  /* 金色渐变 */
+  background: linear-gradient(90deg, var(--c-gold-deep), var(--c-gold), var(--c-gold-hi));
+  /* 宽度过渡 */
+  transition: width 0.5s var(--ease);
+  /* 发光 */
+  box-shadow: 0 0 12px rgba(227, 195, 122, 0.8);
+}
+
+/* 进度文案 */
+.loading-tip {
+  /* 清除外边距 */
+  margin: 0;
+  /* 字号 */
+  font-size: 12px;
+  /* 字距 */
+  letter-spacing: 0.2em;
+  /* 次级文字色 */
+  color: var(--c-text-dim);
+}
+
+/* 百分比数字 */
+.loading-percent {
+  /* 清除外边距 */
+  margin: -8px 0 0 0;
+  /* 字号 */
+  font-size: 11px;
+  /* 等宽数字 */
+  font-variant-numeric: tabular-nums;
+  /* 弱文字色 */
+  color: var(--c-text-faint);
+}
+
+/* --------------------------------------------------------------------------
+   14. 响应式适配
+   -------------------------------------------------------------------------- */
+
+/* 窄屏（平板竖屏及以下）：改为「3D 场景占上半屏 + 底部通栏操作面板」的布局 */
+@media (max-width: 980px) {
+  /* HUD 内边距收紧 */
+  #hud {
+    padding: calc(10px + env(safe-area-inset-top, 0px)) 14px 10px 14px;
+  }
+
+  /* 状态胶囊在窄屏隐藏，避免挤压按钮 */
+  .status-chip {
+    display: none;
+  }
+
+  /* 品牌副标题在窄屏隐藏，只留主标题 */
+  .brand-text p {
+    display: none;
+  }
+
+  /* 主标题字号略减 */
+  .brand-text h1 {
+    font-size: 15px;
+    letter-spacing: 0.26em;
+  }
+
+  /* ------------------------------------------------------------------
+     提问面板：改为底部通栏的紧凑面板。
+     原设计里它是一张高约 370px 的卡片，在手机上会盖住整个牌阵，
+     因此这里把输入框压到单行、快捷问题改成横向滚动的一行。
+     ------------------------------------------------------------------ */
+  #ask-panel {
+    /* 左右贴边、宽度自适应 */
+    left: 12px;
+    right: 12px;
+    width: auto;
+    /* 贴住底部 */
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+    /* 圆角略收 */
+    border-radius: 14px;
+  }
+
+  /* 标题栏压缩 */
+  #ask-panel .panel-head {
+    padding: 8px 14px;
+  }
+
+  /* 输入框压成固定单行高度 */
+  #question-input {
+    min-height: 46px;
+    max-height: 46px;
+    padding: 12px 14px;
+    font-size: 13px;
+    line-height: 1.6;
+  }
+
+  /* 快捷问题：单行横向滚动，不换行 */
+  .quick-asks {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    padding: 10px 14px 2px 14px;
+    /* 隐藏滚动条但保留滚动能力 */
+    scrollbar-width: none;
+  }
+
+  /* WebKit 下隐藏滚动条 */
+  .quick-asks::-webkit-scrollbar {
+    display: none;
+  }
+
+  /* 单个标签不参与压缩 */
+  .quick-ask {
+    flex: 0 0 auto;
+    white-space: nowrap;
+  }
+
+  /* 按钮组压缩 */
+  .ask-actions {
+    padding: 10px 14px 12px 14px;
+  }
+
+  /* 按钮内边距与字号下降 */
+  .ask-actions .btn {
+    padding: 9px 12px;
+    font-size: 12px;
+  }
+
+  /* ------------------------------------------------------------------
+     牌位指示器：上移到提问面板之上，避免被面板遮住
+     （面板紧凑后的实际高度约 190px，这里留出 206px 的安全间距）
+     ------------------------------------------------------------------ */
+  #focus-bar {
+    bottom: calc(206px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* 提示文案缩小 */
+  .focus-hint {
+    font-size: 11px;
+    padding: 6px 14px;
+    letter-spacing: 0.1em;
+  }
+
+  /* ------------------------------------------------------------------
+     解读面板：窄屏下改为全屏覆盖层
+     ------------------------------------------------------------------ */
+  #reading-panel {
+    top: calc(72px + env(safe-area-inset-top, 0px));
+    left: 12px;
+    right: 12px;
+    width: auto;
+    bottom: calc(10px + env(safe-area-inset-bottom, 0px));
+  }
+
+  /* ------------------------------------------------------------------
+     摄像头面板：缩小并移到左上，避免与底部面板抢空间
+     ------------------------------------------------------------------ */
+  #camera-panel {
+    width: 152px;
+    left: 12px;
+    top: 74px;
+    bottom: auto;
+  }
+
+  /* 窄屏下手势图例隐藏，节约高度（面板本身已足够说明） */
+  .gesture-legend {
+    display: none;
+  }
+}
+
+/* 超窄屏（小屏手机）：进一步压缩 */
+@media (max-width: 560px) {
+  /* 品牌符号缩小 */
+  .brand-mark {
+    font-size: 20px;
+  }
+
+  /* 手势按钮只保留图标，节省横向空间 */
+  #btn-gesture .btn-label {
+    display: none;
+  }
+
+  /* 手势按钮改为正方形 */
+  #btn-gesture {
+    width: 38px;
+    height: 38px;
+    padding: 0;
+  }
+
+  /* 弹层内边距收紧 */
+  .modal-card {
+    padding: 22px 20px 20px 20px;
+  }
+
+  /* 解读正文内边距收紧 */
+  .reading-body {
+    padding: 14px 16px 22px 16px;
+  }
+}
+
+/* 用户系统偏好为“减少动态效果”时，关闭所有装饰性动画，保证无障碍体验 */
+@media (prefers-reduced-motion: reduce) {
+  /* 所有元素动画时长压到最短 */
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

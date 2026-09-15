@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<!-- 文档语言声明为简体中文，利于字体渲染与无障碍朗读 -->
+<html lang="zh-CN">
+  <head>
+    <!-- 统一使用 UTF-8 编码，保证中文牌名与解读文本不乱码 -->
+    <meta charset="UTF-8" />
+    <!-- 移动端视口设置：禁止缩放，避免手势操作时页面被意外放大 -->
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <!-- 浏览器地址栏主题色，配合深色界面 -->
+    <meta name="theme-color" content="#07060b" />
+    <!-- 站点描述，供搜索引擎与社交分享抓取 -->
+    <meta
+      name="description"
+      content="Arcana · 基于 three.js 的沉浸式三维塔罗牌应用：实时抽取三张牌、摄像头手势操控、即时生成专属解读。"
+    />
+    <!-- 页面标题 -->
+    <title>Arcana · 三维塔罗 · 手势占卜</title>
+    <!-- 内联 SVG 图标：以金色星芒作为站点 favicon，不额外请求外部资源 -->
+    <link
+      rel="icon"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Ctext y='26' font-size='26' fill='%23e3c37a'%3E%E2%9C%A6%3C/text%3E%3C/svg%3E"
+    />
+  </head>
+
+  <body>
+    <!-- 应用根容器：所有 2D 界面层与 3D 画布都挂在这里，便于统一管理层级 -->
+    <div id="app">
+      <!-- ==================================================================
+           3D 渲染画布：three.js 的全部内容（牌阵 / 星光 / 反射地面）都渲染在此
+           ================================================================== -->
+      <canvas id="stage"></canvas>
+
+      <!-- 顶部的暗角与噪点装饰层，纯 CSS 实现，用于提升画面质感 -->
+      <div class="fx-vignette" aria-hidden="true"></div>
+
+      <!-- ==================================================================
+           顶部 HUD：品牌标识 + 状态胶囊 + 功能按钮
+           ================================================================== -->
+      <header id="hud">
+        <!-- 左侧品牌区 -->
+        <div class="brand">
+          <!-- 品牌符号，使用金色星芒字符 -->
+          <span class="brand-mark">✦</span>
+          <!-- 品牌文字区 -->
+          <div class="brand-text">
+            <!-- 主标题 -->
+            <h1>ARCANA</h1>
+            <!-- 副标题 -->
+            <p>三维塔罗 · 手势占卜</p>
+          </div>
+        </div>
+
+        <!-- 右侧操作区 -->
+        <div class="hud-actions">
+          <!-- 实时状态胶囊：显示当前所处的交互阶段 -->
+          <div class="status-chip" id="status-chip">
+            <!-- 呼吸指示灯 -->
+            <i class="status-dot"></i>
+            <!-- 状态文案 -->
+            <span id="status-text">正在唤醒牌阵…</span>
+          </div>
+
+          <!-- 手势开关按钮：点击后申请摄像头权限并加载手部模型 -->
+          <button type="button" id="btn-gesture" class="btn btn-ghost">
+            <!-- 按钮图标 -->
+            <span class="btn-glyph">◉</span>
+            <!-- 按钮文案 -->
+            <span class="btn-label">开启手势</span>
+          </button>
+
+          <!-- 帮助按钮：打开操作说明弹层 -->
+          <button type="button" id="btn-help" class="btn btn-ghost btn-square" title="操作说明" aria-label="操作说明">?</button>
+        </div>
+      </header>
+
+      <!-- ==================================================================
+           左侧摄像头面板：手势追踪预览 + 关键点叠加 + 手势图例
+           ================================================================== -->
+      <aside id="camera-panel" class="panel glass" hidden>
+        <!-- 面板标题栏 -->
+        <div class="panel-head">
+          <!-- 标题文字 -->
+          <span class="panel-title">手势追踪</span>
+          <!-- 折叠按钮 -->
+          <button type="button" id="btn-camera-fold" class="mini-btn">收起</button>
+        </div>
+
+        <!-- 摄像头画面容器：视频与叠加画布严格重叠 -->
+        <div class="camera-stage">
+          <!-- 摄像头实时画面（镜像显示由 CSS 控制），muted 防止回声 -->
+          <video id="hand-video" playsinline autoplay muted></video>
+          <!-- 关键点与骨架的叠加画布，尺寸与视频保持一致 -->
+          <canvas id="hand-overlay"></canvas>
+          <!-- 右下角状态角标：显示当前识别到的手势 -->
+          <div class="camera-badge" id="hand-badge">等待手势</div>
+        </div>
+
+        <!-- 手势操作图例，直接告诉用户两种手势的用途 -->
+        <div class="gesture-legend">
+          <!-- 手势一：张开手掌 + 滑动 -->
+          <div class="legend-item">
+            <span class="legend-glyph">✋</span>
+            <span class="legend-text"><b>张开手掌滑动</b><em>浏览 / 聚焦牌面</em></span>
+          </div>
+          <!-- 手势二：握拳 -->
+          <div class="legend-item">
+            <span class="legend-glyph">✊</span>
+            <span class="legend-text"><b>并拢握拳</b><em>确认选中的牌</em></span>
+          </div>
+        </div>
+      </aside>
+
+      <!-- ==================================================================
+           底部中央：牌位指示器 + 当前操作提示
+           ================================================================== -->
+      <div id="focus-bar">
+        <!-- 三个牌位指示点，由脚本动态渲染 -->
+        <div class="slot-dots" id="slot-dots"></div>
+        <!-- 动态操作提示文案 -->
+        <p class="focus-hint" id="focus-hint">正在准备牌阵…</p>
+      </div>
+
+      <!-- ==================================================================
+           右侧提问面板：输入问题 + 快捷问题 + 操作按钮
+           ================================================================== -->
+      <section id="ask-panel" class="panel glass">
+        <!-- 面板标题栏 -->
+        <div class="panel-head">
+          <!-- 标题文字 -->
+          <span class="panel-title">你的问题</span>
+          <!-- 字数提示 -->
+          <span class="panel-meta" id="question-count">0 / 120</span>
+        </div>
+
+        <!-- 问题输入框：占位文案给出示例，降低使用门槛 -->
+        <textarea
+          id="question-input"
+          rows="3"
+          maxlength="120"
+          placeholder="把心里的事写下来，例如：我和他的关系接下来会怎么走？"
+        ></textarea>
+
+        <!-- 快捷问题标签，一键填入常见问题类型 -->
+        <div class="quick-asks" id="quick-asks"></div>
+
+        <!-- 操作按钮组 -->
+        <div class="ask-actions">
+          <!-- 主按钮：确认问题并进入抽牌阶段 -->
+          <button type="button" id="btn-draw" class="btn btn-gold">开始抽牌</button>
+          <!-- 次按钮：清空一切重新开始 -->
+          <button type="button" id="btn-reset" class="btn btn-ghost">重新开始</button>
+        </div>
+      </section>
+
+      <!-- ==================================================================
+           右侧解读面板：三张牌概览 + 完整解读文本，抽满三张后滑入
+           ================================================================== -->
+      <section id="reading-panel" class="panel glass" hidden>
+        <!-- 面板标题栏 -->
+        <div class="panel-head">
+          <!-- 标题文字 -->
+          <span class="panel-title">牌阵解读</span>
+          <!-- 关闭按钮 -->
+          <button type="button" id="btn-reading-close" class="mini-btn">关闭</button>
+        </div>
+
+        <!-- 解读正文滚动区 -->
+        <div class="reading-body" id="reading-body">
+          <!-- 内容由 UIManager 动态渲染 -->
+        </div>
+      </section>
+
+      <!-- ==================================================================
+           手势光标：跟随手掌中心在屏幕上移动的金色光环
+           ================================================================== -->
+      <div id="gesture-cursor" hidden>
+        <!-- 外环 -->
+        <span class="cursor-ring"></span>
+        <!-- 内点 -->
+        <span class="cursor-core"></span>
+      </div>
+
+      <!-- ==================================================================
+           瞬态提示条：用于反馈“已选牌”“手势已开启”等短消息
+           ================================================================== -->
+      <div id="toast" role="status" aria-live="polite"></div>
+
+      <!-- ==================================================================
+           加载遮罩：品牌动画 + 进度环 + 进度文案
+           ================================================================== -->
+      <div id="loading">
+        <!-- 中央内容 -->
+        <div class="loading-inner">
+          <!-- 旋转的金色符文环 -->
+          <div class="loading-sigil">
+            <!-- 外层旋转环 -->
+            <span class="sigil-ring outer"></span>
+            <!-- 内层反向旋转环 -->
+            <span class="sigil-ring inner"></span>
+            <!-- 中心星芒 -->
+            <span class="sigil-core">✦</span>
+          </div>
+          <!-- 进度条 -->
+          <div class="loading-bar"><i id="loading-bar-fill"></i></div>
+          <!-- 进度文案 -->
+          <p class="loading-tip" id="loading-tip">正在描摹牌面…</p>
+          <!-- 百分比 -->
+          <p class="loading-percent" id="loading-percent">0%</p>
+        </div>
+      </div>
+
+      <!-- ==================================================================
+           帮助弹层：完整的操作说明（键鼠 + 手势 + 流程）
+           ================================================================== -->
+      <div id="help-modal" class="modal" hidden>
+        <!-- 弹层内容卡片 -->
+        <div class="modal-card glass">
+          <!-- 弹层标题 -->
+          <h2>如何占卜</h2>
+
+          <!-- 流程说明 -->
+          <ol class="help-list">
+            <li><b>写下问题</b>　在右侧输入框写下你想问的事，问题越具体，解读越贴合。</li>
+            <li><b>浏览牌阵</b>　牌面呈弧形排开，下方的卡会浮起并泛光，那就是当前聚焦的牌。</li>
+            <li><b>确认三张</b>　依次确认三张牌，它们会飞到桌面上的「现状 / 转折 / 走向」三个位置并翻开。</li>
+            <li><b>阅读解读</b>　三张牌齐备后自动生成结合你问题的专属解读。</li>
+          </ol>
+
+          <!-- 键鼠操作说明 -->
+          <h3>键鼠操作</h3>
+          <ul class="help-list">
+            <li><b>← / →</b>　切换聚焦的牌</li>
+            <li><b>空格 / 回车</b>　确认当前聚焦的牌</li>
+            <li><b>拖动鼠标</b>　轻微转动视角</li>
+            <li><b>滚轮</b>　推近 / 拉远镜头</li>
+          </ul>
+
+          <!-- 手势操作说明 -->
+          <h3>手势操作</h3>
+          <ul class="help-list">
+            <li><b>✋ 张开手掌左右滑动</b>　快速浏览牌阵，滑动越快跨度越大</li>
+            <li><b>✊ 并拢握拳并保持半秒</b>　确认当前聚焦的牌</li>
+            <li><b>手掌位置</b>　手掌缓慢移动时会带动镜头轻微视差，增强临场感</li>
+          </ul>
+
+          <!-- 关闭按钮 -->
+          <button type="button" id="btn-help-close" class="btn btn-gold">开始体验</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 应用入口脚本：ES Module 方式加载，由 Vite 负责解析依赖 -->
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>
