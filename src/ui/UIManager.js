@@ -355,6 +355,7 @@ export class UIManager {
 
   /**
    * 渲染完整解读结果。
+   * 版面顺序刻意把「先说结论」放在最前面——用户最想知道的是判断，不是过程。
    * @param {object} reading generateReading 的返回值
    */
   renderReading(reading) {
@@ -365,29 +366,36 @@ export class UIManager {
     const parts = [];
 
     // ------------------------------------------------------------------
-    // 1. 问题回显
+    // 1. 问题回显 + 归类
     // ------------------------------------------------------------------
-    // 有有效问题才显示
     if (reading.cleanQuestion) {
-      // 转义后再插入，避免用户输入破坏结构
       parts.push(
-        `<div class="reading-question">「${this._escape(reading.cleanQuestion)}」<br><span style="opacity:.6;font-size:11px;letter-spacing:.1em">类别：${
+        `<div class="reading-question">「${this._escape(reading.cleanQuestion)}」<br><span class="reading-meta">类别：${
           reading.category.label
         } · 类型：${reading.questionType.label}</span></div>`
       );
     }
 
-    // ------------------------------------------------------------------
-    // 2. 问题类型说明
-    // ------------------------------------------------------------------
+    // 问题类型的说明，交代这份解读会怎么回答
     parts.push(`<p class="reading-paragraph">${this._escape(reading.questionType.intro)}</p>`);
 
     // ------------------------------------------------------------------
-    // 3. 三张牌概览
+    // 2. 先说结论（高亮块）
+    // ------------------------------------------------------------------
+    parts.push('<div class="reading-section-title">先说结论</div>');
+    parts.push('<div class="verdict-block">');
+    // 逐段渲染
+    reading.verdict.paragraphs.forEach((p) => {
+      parts.push(`<p class="reading-paragraph">${this._escape(p)}</p>`);
+    });
+    parts.push('</div>');
+
+    // ------------------------------------------------------------------
+    // 3. 牌面一览
     // ------------------------------------------------------------------
     parts.push('<div class="reading-section-title">牌面</div>');
     parts.push('<div class="card-summary-list">');
-    // 逐张渲染
+    // 逐张渲染概览
     reading.cards.forEach((c) => {
       // 正逆位样式类
       const orientClass = c.isReversed ? ' is-reversed' : '';
@@ -409,69 +417,107 @@ export class UIManager {
     parts.push('</div>');
 
     // ------------------------------------------------------------------
-    // 4. 逐张解读
+    // 4. 逐张细读：画面 / 在这件事上 / 提示 三段式
     // ------------------------------------------------------------------
-    parts.push('<div class="reading-section-title">逐张解读</div>');
+    parts.push('<div class="reading-section-title">逐张细读</div>');
     reading.cards.forEach((c) => {
-      // 小节标题
-      parts.push(`<div class="reading-section-title">${this._escape(c.headline)}</div>`);
-      // 段落
-      c.paragraphs.forEach((p) => {
-        // 转义后插入
-        parts.push(`<p class="reading-paragraph">${this._escape(p)}</p>`);
-      });
+      // 逆位时标题上加一个样式钩子，方便后面调色
+      const revClass = c.isReversed ? ' is-reversed' : '';
+      // 卡片头
+      parts.push(`<div class="card-reading${revClass}">`);
+      parts.push(`
+        <div class="card-reading-head">
+          <span class="card-reading-pos">${c.position.label}</span>
+          <span class="card-reading-name">${this._escape(c.data.name)}</span>
+          <span class="card-summary-en">${this._escape(c.data.en)}</span>
+          <span class="card-summary-orient${c.isReversed ? ' is-reversed' : ''}">${c.orientation}</span>
+        </div>
+      `);
+      // 画面
+      parts.push(
+        `<div class="reading-block"><span class="reading-block-label">画面</span><p class="reading-paragraph">${this._escape(
+          c.visual
+        )}</p></div>`
+      );
+      // 在这件事上
+      parts.push(
+        `<div class="reading-block"><span class="reading-block-label">在这件事上</span><p class="reading-paragraph">${this._escape(
+          c.context
+        )}</p></div>`
+      );
+      // 提示
+      if (c.tip) {
+        parts.push(
+          `<div class="reading-block is-tip"><span class="reading-block-label">提示</span><p class="reading-paragraph">${this._escape(
+            c.tip
+          )}</p></div>`
+        );
+      }
+      // 闭合
+      parts.push('</div>');
     });
 
     // ------------------------------------------------------------------
-    // 5. 综合结论
+    // 5. 三张牌之间的关系
     // ------------------------------------------------------------------
-    parts.push(`<div class="reading-section-title">${this._escape(reading.synthesis.title)}</div>`);
-    // 逐个段落
-    reading.synthesis.paragraphs.forEach((p) => {
-      // 插入
+    parts.push('<div class="reading-section-title">三张牌之间的关系</div>');
+    reading.tension.paragraphs.forEach((p) => {
       parts.push(`<p class="reading-paragraph">${this._escape(p)}</p>`);
     });
 
     // ------------------------------------------------------------------
-    // 6. 能量评估
+    // 6. 时间与行动窗口
+    // ------------------------------------------------------------------
+    parts.push('<div class="reading-section-title">时间与行动窗口</div>');
+    parts.push(`<p class="reading-paragraph">${this._escape(reading.window.text)}</p>`);
+
+    // ------------------------------------------------------------------
+    // 7. 能量评估
     // ------------------------------------------------------------------
     parts.push('<div class="reading-section-title">能量评估</div>');
-    // 能量标签与百分比
     parts.push(
       `<p class="reading-paragraph" style="margin-bottom:2px">${this._escape(
         reading.energy.label
-      )} · 正位 ${reading.energy.uprights}/3 · 大阿卡纳 ${reading.energy.majors}/3</p>`
+      )} · 正位 ${reading.energy.uprights}/3 · 主题牌 ${reading.energy.majors}/3</p>`
     );
     // 能量条
     parts.push(`
       <div class="energy-meter"><i style="width:${reading.energy.percent}%"></i></div>
       <p class="energy-caption">沟通度 ${reading.energy.percent}%</p>
     `);
-    // 等级说明
-    parts.push(`<p class="reading-paragraph" style="margin-top:10px">${this._escape(reading.energy.caption)}</p>`);
+    parts.push(
+      `<p class="reading-paragraph" style="margin-top:10px">${this._escape(reading.energy.caption)}</p>`
+    );
 
     // ------------------------------------------------------------------
-    // 7. 行动建议
+    // 8. 综合陈述
+    // ------------------------------------------------------------------
+    parts.push('<div class="reading-section-title">综合陈述</div>');
+    reading.synthesis.paragraphs.forEach((p) => {
+      parts.push(`<p class="reading-paragraph">${this._escape(p)}</p>`);
+    });
+
+    // ------------------------------------------------------------------
+    // 9. 行动建议
     // ------------------------------------------------------------------
     parts.push('<div class="reading-section-title">行动建议</div>');
     parts.push('<ul class="advice-list">');
     // 逐条渲染，序号由 data-index 提供给 CSS
     reading.advice.forEach((a, i) => {
-      // 插入列表项
       parts.push(`<li data-index="${i + 1}">${this._escape(a)}</li>`);
     });
     parts.push('</ul>');
 
     // ------------------------------------------------------------------
-    // 8. 需要留意
+    // 10. 需要留意
     // ------------------------------------------------------------------
     parts.push('<div class="reading-section-title">需要留意</div>');
-    // 警示块
     parts.push(`<div class="caution-block">${this._escape(reading.caution)}</div>`);
 
     // ------------------------------------------------------------------
-    // 9. 底部操作：解读面板展开时提问面板会滑出屏幕，
-    //    因此必须在这里提供「重新开始」的入口，否则用户会被困在解读里。
+    // 11. 底部操作
+    //     解读面板展开时提问面板会滑出屏幕，因此必须在这里提供「重新开始」的入口，
+    //     否则用户会被困在解读里出不来。
     // ------------------------------------------------------------------
     parts.push(
       `<button type="button" class="btn btn-gold reading-restart" data-action="restart">重新开始 · 再抽一次</button>`

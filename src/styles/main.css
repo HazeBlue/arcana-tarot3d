@@ -77,6 +77,9 @@ body {
   width: 100%;
   height: 100%;
   overflow: hidden;
+  /* 关闭移动端的下拉刷新与边缘回弹，
+     否则在牌阵上向下拖拽会被浏览器当成「下拉刷新」而打断操作 */
+  overscroll-behavior: none;
 }
 
 /* 页面主背景：纯黑打底，为 WebGL 画布提供兜底颜色 */
@@ -907,6 +910,154 @@ body.is-reading #ask-panel {
   padding: 18px 20px 26px 20px;
   /* 滚动惯性（iOS） */
   -webkit-overflow-scrolling: touch;
+}
+
+/* 解读面板中的归类信息（类别 · 类型），排在问题下方 */
+.reading-meta {
+  /* 小字号 */
+  font-size: 11px;
+  /* 字距 */
+  letter-spacing: 0.1em;
+  /* 弱化颜色 */
+  color: var(--c-text-faint);
+  /* 与问题正文拉开一点距离 */
+  display: inline-block;
+  margin-top: 5px;
+}
+
+/* 先说结论的高亮块：左侧金色竖线 + 极淡金底，让判断一眼可见 */
+.verdict-block {
+  /* 左侧金色竖线，比普通引用更重 */
+  border-left: 2px solid var(--c-gold);
+  /* 淡金底色，向右渐隐 */
+  background: linear-gradient(90deg, rgba(227, 195, 122, 0.09), rgba(227, 195, 122, 0));
+  /* 内边距 */
+  padding: 12px 14px 4px 14px;
+  /* 圆角 */
+  border-radius: 0 12px 12px 0;
+  /* 下方留白 */
+  margin-bottom: 6px;
+}
+
+/* 单张牌的细读卡片 */
+.card-reading {
+  /* 内边距 */
+  padding: 14px 15px 6px 15px;
+  /* 下边距 */
+  margin-bottom: 12px;
+  /* 圆角 */
+  border-radius: 13px;
+  /* 极淡底色 */
+  background: rgba(255, 255, 255, 0.032);
+  /* 细描边 */
+  border: 1px solid rgba(227, 195, 122, 0.14);
+}
+
+/* 逆位牌用紫色描边区分，与概览卡的正逆位标记保持一致 */
+.card-reading.is-reversed {
+  /* 紫色描边 */
+  border-color: rgba(183, 155, 236, 0.28);
+  /* 略带紫调底色 */
+  background: rgba(139, 108, 201, 0.055);
+}
+
+/* 细读卡片的标题行 */
+.card-reading-head {
+  /* 横向排列 */
+  display: flex;
+  /* 基线对齐 */
+  align-items: baseline;
+  /* 间距 */
+  gap: 8px;
+  /* 下边距 */
+  margin-bottom: 10px;
+  /* 底部细线 */
+  padding-bottom: 8px;
+  /* 分隔线 */
+  border-bottom: 1px solid rgba(227, 195, 122, 0.12);
+}
+
+/* 牌位标记 */
+.card-reading-pos {
+  /* 小字号 */
+  font-size: 10px;
+  /* 字距 */
+  letter-spacing: 0.14em;
+  /* 金色 */
+  color: var(--c-gold);
+  /* 不参与压缩 */
+  flex: 0 0 auto;
+}
+
+/* 牌名 */
+.card-reading-name {
+  /* 字号 */
+  font-size: 15px;
+  /* 字重 */
+  font-weight: 600;
+  /* 衬线体 */
+  font-family: var(--font-serif);
+  /* 字距 */
+  letter-spacing: 0.05em;
+  /* 正文色 */
+  color: var(--c-text);
+}
+
+/* 三段式中的一段 */
+.reading-block {
+  /* 相对定位，供左侧标签使用 */
+  position: relative;
+  /* 左侧留出标签宽度。取值要能容下最长的那条标签「在这件事上」，
+     否则它会被折成两行，把整块的版式带歪 */
+  padding-left: 74px;
+  /* 下边距 */
+  margin-bottom: 9px;
+}
+
+/* 段标签（画面 / 在这件事上 / 提示） */
+.reading-block-label {
+  /* 绝对定位到左侧 */
+  position: absolute;
+  /* 顶部对齐首行 */
+  top: 3px;
+  /* 左对齐 */
+  left: 0;
+  /* 固定宽度，刚好放下「在这件事上」五个字 */
+  width: 66px;
+  /* 不换行 */
+  white-space: nowrap;
+  /* 小字号 */
+  font-size: 10px;
+  /* 字距收紧一点，给五个字留出余量 */
+  letter-spacing: 0.06em;
+  /* 弱金色 */
+  color: rgba(227, 195, 122, 0.75);
+  /* 右侧细线分隔 */
+  border-right: 1px solid rgba(227, 195, 122, 0.2);
+  /* 右内边距 */
+  padding-right: 8px;
+  /* 右对齐，贴近分隔线 */
+  text-align: right;
+  /* 无衬线体 */
+  font-family: var(--font-sans);
+}
+
+/* 「提示」这一段用暖金色强调，作为可执行的落点 */
+.reading-block.is-tip .reading-block-label {
+  /* 提亮 */
+  color: var(--c-gold);
+}
+
+/* 提示段的正文略亮一点 */
+.reading-block.is-tip .reading-paragraph {
+  /* 暖白文字 */
+  color: rgba(255, 240, 210, 0.92);
+}
+
+/* 细读卡片里的段落去掉多余的外边距，间距交给外层 block 控制 */
+.card-reading .reading-paragraph {
+  /* 只留下边距 */
+  margin: 0;
 }
 
 /* 解读面板中的问题回显 */

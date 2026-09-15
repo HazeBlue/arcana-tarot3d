@@ -96,6 +96,16 @@ export function analyzeQuestion(raw) {
         matched.push(kw);
       }
     }
+    // 遍历弱关键词：只给一半分，且不计入「命中关键词」列表（避免污染主题词）
+    for (const kw of cfg.weakKeywords || []) {
+      // 包含才计分
+      if (text.includes(kw)) {
+        // 权重减半
+        score += (1 + (kw.length - 1) * 0.5) * 0.5;
+        // 记录为弱命中，供调试查看
+        matched.push(kw + '(弱)');
+      }
+    }
     // 写回结果
     scores[key] = score;
     // 记录命中词
@@ -126,13 +136,21 @@ export function analyzeQuestion(raw) {
 
   // ------------------------------------------------------------------
   // 2. 提问类型识别：按优先级依次判断
+  //
+  // 顺序很重要，这里踩过两个坑：
+  //   ① 「考研还是直接工作」同时含有选择题标志，必须先把选择题判出去；
+  //   ② 「它会回来吗」「还有必要继续做下去吗」这类中文疑问句的核心标志是句尾的
+  //      「吗」，靠列举「会不会 / 能不能」根本列不全，因此加一条「以吗结尾即是非题」
+  //      的兜底规则。这条规则对中文的准确率远高于枚举短语。
   // ------------------------------------------------------------------
   let questionType = 'open';
-  // 是非题优先级最高
-  if (YESNO_PATTERN.test(text)) questionType = 'yesno';
-  // 其次是选择题
-  else if (CHOICE_PATTERN.test(text)) questionType = 'choice';
-  // 再次是趋势题
+  // 选择题优先级最高：只要出现「还是 / 或者 / 哪个」，它一定是在选边
+  if (CHOICE_PATTERN.test(text)) questionType = 'choice';
+  // 以「吗」结尾的句子一律视为是非题
+  else if (/吗$/.test(text)) questionType = 'yesno';
+  // 再有就是显式的疑问短语
+  else if (YESNO_PATTERN.test(text)) questionType = 'yesno';
+  // 其次是趋势题
   else if (PREDICTION_PATTERN.test(text)) questionType = 'prediction';
 
   // ------------------------------------------------------------------
@@ -163,6 +181,8 @@ export function analyzeQuestion(raw) {
   const allHits = related
     // 展开各命中的词
     .flatMap((k) => hits[k] || [])
+    // 剔除弱命中：它们太泛，不适合被当作解读里的主题词
+    .filter((v) => !v.endsWith('(弱)'))
     // 去重
     .filter((v, i, arr) => arr.indexOf(v) === i)
     // 按长度降序

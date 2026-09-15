@@ -142,6 +142,10 @@ export class TarotCard extends THREE.Group {
     // 调用父类构造函数，把自己变成一个 Group
     super();
 
+    // 打一个类型标记：射线拾取时需要从命中的网格向上快速认出「这是不是一张牌」。
+    // 用 instanceof 也可以，但打包压缩后类名会变，用标记属性更稳。
+    this.isTarotCard = true;
+
     // 保存卡牌数据引用
     this.data = cardData;
     // 保存贴图工厂引用，用于延迟生成牌面
@@ -237,6 +241,8 @@ export class TarotCard extends THREE.Group {
     // 直接复用牌阵下发的共享材质：78 张牌的牌背完全一致，没有必要各持一份。
     // 注意必须用 this.xxx 访问——_build() 是方法，看不到构造函数里解构出来的局部变量。
     const backPlane = new THREE.Mesh(plane, this.backMaterial);
+    // 记录引用：牌背朝上时，它就是鼠标射线拾取用的碰撞面
+    this.backPlane = backPlane;
     // 放到牌的负 Z 侧：必须贴在真实半厚度之外，否则会被牌体遮住
     backPlane.position.z = -halfDepth - 0.0008;
     // 绕 Y 轴转 π，让它的正面朝外

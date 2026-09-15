@@ -123,7 +123,9 @@ export class Deck {
     // 注意：这是一个「环形无限」索引——可以任意增减，不设上下限。
     // 它每变化 FAN_COUNT，整副牌在视觉上正好平移一圈，因此永远滑不到尽头。
     this.focus = 0;
-    // 聚焦索引的目标值（整数，同样无上下限）
+    // 聚焦索引的目标值。
+    // 它允许是小数：鼠标/手指拖拽时按像素连续累加，牌扇才能跟手平移，
+    // 而不是走一格停一下。松手时由 snapFocus() 吸附到最近的整数（即对齐到某张牌）。
     this.focusTarget = 0;
 
     // 复用的临时对象，避免每帧新建导致 GC 抖动
@@ -659,7 +661,7 @@ export class Deck {
     // 避免用户长时间连续滑动后出现精度下降、卡牌抖动。
     // ------------------------------------------------------------------
     if (this.focusTarget >= FAN_COUNT || this.focusTarget < 0) {
-      // 计算需要平移的整数圈
+      // 计算需要平移的整数圈（focusTarget 可能是小数，所以用 floor 而不是取整）
       const shift = Math.floor(this.focusTarget / FAN_COUNT) * FAN_COUNT;
       // 目标索引平移
       this.focusTarget -= shift;
@@ -729,6 +731,78 @@ export class Deck {
   }
 
   /**
+   * 连续滚动：供鼠标拖拽与手指滑动使用。
+   * 与 browse() 的区别是参数为小数，直接累加到浮点焦点上，因此牌扇能跟手平移。
+   * @param {number} delta 滚动量（单位为「张」，正数向后）
+   */
+  scrollBy(delta) {
+    // 直接累加，不做夹紧——环形索引本身没有边界
+    this.focusTarget += delta;
+  }
+
+  /**
+   * 吸附：把浮点焦点对齐到最近的一张牌上。
+   * 拖拽松手后调用，让牌扇稳稳停在一张正对镜头的牌上。
+   */
+  snapFocus() {
+    // 四舍五入到最近的整数索引
+    this.focusTarget = Math.round(this.focusTarget);
+  }
+
+  /**
+   * 把焦点移动到指定卡牌上（鼠标悬停与点击选牌使用）。
+   * @param {object} card 目标卡牌实例
+   */
+  focusCardAt(card) {
+    // 取它的物理下标
+    const physical = this.cards.indexOf(card);
+    // 找不到则忽略
+    if (physical < 0) return;
+    // 以当前焦点所在的整数位置为基准
+    const base = Math.round(this.focusTarget);
+    // 算出物理下标相对于基准的正向距离（0 ~ 77）
+    const forward = mod(physical - base, FAN_COUNT);
+    // 转换成有符号的最短距离（-38 ~ +38），保证焦点走最短路过去
+    const delta = forward > FAN_COUNT / 2 ? forward - FAN_COUNT : forward;
+    // 写入目标焦点
+    this.focusTarget = base + delta;
+  }
+
+  /**
+   * 射线拾取：找出鼠标/手指正下方的那张牌。
+   * 只对「仍在牌阵中」的牌做检测，且只测牌背平面（两个三角形），
+   * 相比遍历整个牌体几何体便宜得多。
+   * @param {THREE.Raycaster} raycaster 已经设置好射线的射线器
+   * @returns {object|null} 命中的卡牌实例，没命中返回 null
+   */
+  pickCard(raycaster) {
+    // 收集候选碰撞面：仍在牌阵中且可见的牌，取其牌背平面
+    const targets = [];
+    // 遍历全部卡牌
+    for (let i = 0; i < this.cards.length; i++) {
+      // 取出卡牌
+      const card = this.cards[i];
+      // 只挑仍在牌阵中、可见、且有碰撞面的牌
+      if (card.state === 'fan' && card.visible && card.backPlane) targets.push(card.backPlane);
+    }
+    // 没有候选则直接返回
+    if (!targets.length) return null;
+    // 求交（不递归，因为传入的已经是具体网格）
+    const hits = raycaster.intersectObjects(targets, false);
+    // 未命中
+    if (!hits.length) return null;
+    // 从命中的网格向上找到所属的 TarotCard
+    let obj = hits[0].object;
+    // 最多向上找三层（平面 → spin → model → TarotCard）
+    for (let depth = 0; depth < 4 && obj; depth++) {
+      if (obj.isTarotCard) return obj;
+      obj = obj.parent;
+    }
+    // 兜底
+    return null;
+  }
+
+  /**
    * 从指定逻辑索引出发，跳过已经被选走的卡牌，找到下一个仍然在场的索引。
    * 逻辑索引可以任意正负，因此这里用恒正取模把它折算回 0~77 的物理牌上。
    * @param {number} index 起始逻辑索引
@@ -752,14 +826,16 @@ export class Deck {
   }
 
   /**
-   * 确认当前聚焦的卡牌，把它送入下一个空牌位。
+   * 确认选牌，把它送入下一个空牌位。
+   * @param {object|null} [targetCard] 指定要选中的牌（鼠标/手指直接点中的那张）；
+   *                                   不传则取当前聚焦的牌
    * @returns {object|null} 被选中的卡牌信息，或 null（无法选中时）
    */
-  confirm() {
+  confirm(targetCard = null) {
     // 已经选满三张则不再接受
     if (this.selected.length >= 3) return null;
-    // 取当前聚焦的卡牌：把无上下限的逻辑索引折算成物理下标
-    const card = this.cards[mod(Math.round(this.focusTarget), FAN_COUNT)];
+    // 指定了牌就用指定的，否则取当前聚焦的那张（把无上下限的逻辑索引折算成物理下标）
+    const card = targetCard || this.cards[mod(Math.round(this.focusTarget), FAN_COUNT)];
     // 卡牌不存在或已离场则失败
     if (!card || card.state !== 'fan') return null;
 
@@ -799,6 +875,8 @@ export class Deck {
       this.spawnBurst(targetPos.clone().setY(targetPos.y - 0.3));
     });
 
+    // 先把可能残留的小数焦点吸附到整数，避免下一张取偏
+    this.focusTarget = Math.round(this.focusTarget);
     // 记录到已选列表
     this.selected.push(card);
     // 自动把聚焦移到下一张可用的牌上

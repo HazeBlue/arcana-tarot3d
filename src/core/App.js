@@ -153,7 +153,7 @@ export class App {
     // ------------------------------------------------------------------
     // 6. 交互层：键鼠
     // ------------------------------------------------------------------
-    this.pointer = new PointerControls({ canvas: this.canvas, stage: this.stage });
+    this.pointer = new PointerControls({ canvas: this.canvas, stage: this.stage, deck: this.deck });
     // 绑定键鼠事件
     this._bindPointerEvents();
     // 启用键鼠
@@ -249,12 +249,21 @@ export class App {
   _refreshHint() {
     // 已选数量
     const n = this.deck.selected.length;
-    // 78 张牌铺成闭环，可以无限滑动，因此提示里要明确「循环」这件事
-    this.ui.setHint(
-      n === 0
-        ? '← / → 浏览牌阵（可无限循环）· 空格确认第一张牌'
-        : `← / → 继续浏览 · 空格确认第 ${n + 1} 张牌`
-    );
+    // 78 张牌铺成闭环，可以无限滑动，因此提示里要明确「循环」这件事。
+    // 鼠标 / 手指与键盘给两套说法，避免用着鼠标却被提示去按方向键。
+    const touch = window.matchMedia('(hover: none)').matches;
+    // 依据输入设备给出对应措辞
+    if (touch) {
+      // 触屏措辞
+      this.ui.setHint(
+        n === 0 ? '左右滑动浏览牌阵（无限循环）· 点一下牌即可选中' : `继续滑动浏览 · 点牌选中第 ${n + 1} 张`
+      );
+    } else {
+      // 鼠标措辞
+      this.ui.setHint(
+        n === 0 ? '按住左右拖动滑动牌阵 · 点击牌即可选中' : `继续拖动浏览 · 点击牌选中第 ${n + 1} 张`
+      );
+    }
   }
 
   // ==========================================================================
@@ -262,28 +271,53 @@ export class App {
   // ==========================================================================
 
   /**
-   * 绑定键鼠事件。
+   * 绑定指针事件（鼠标与触屏共用同一套语义事件）。
    *
-   * 说明：项目早期版本提供过摄像头手势操作，实测在同一台机器上
-   * MediaPipe 推理会持续占用 GPU、把渲染帧率拖到难以忍受，
-   * 收益远小于代价，因此已整体移除。当前的浏览与选牌全部由键鼠驱动。
-   */
-  /**
-   * 绑定键鼠事件。
+   * 说明：项目早期版本提供过摄像头手势操作，实测 MediaPipe 推理会持续占用 GPU、
+   * 把渲染帧率拖到难以忍受，收益远小于代价，因此已整体移除。
+   * 现在鼠标与手指走的是同一条链路：拖拽滑动、点击选牌。
    */
   _bindPointerEvents() {
-    // 浏览
+    // 拖拽滑动：按小数连续滚动牌扇，天然跟手
+    this.pointer.on('scroll', ({ delta }) => {
+      // 转交牌阵做连续滚动
+      this.deck.scrollBy(delta);
+    });
+
+    // 松手 / 惯性结束：吸附到最近的一张牌上
+    this.pointer.on('snap', () => {
+      // 把浮点焦点对齐到最近的整数索引
+      this.deck.snapFocus();
+      // 刷新底部提示
+      this._refreshHint();
+    });
+
+    // 鼠标悬停：把光标下方那张牌抬到正中并点亮
+    this.pointer.on('hover', ({ card }) => {
+      // 只有悬停到牌上才移动焦点；悬停到空白处保持不动
+      if (card) this.deck.focusCardAt(card);
+    });
+
+    // 点击 / 轻点：点到牌上就抽出那张牌，点在空白处抽当前聚焦的牌
+    this.pointer.on('select', ({ card }) => {
+      // 转交统一处理；card 为 null 时 confirm 会回落到「当前聚焦的牌」
+      this.handleConfirm(card);
+    });
+
+    // 键盘浏览
     this.pointer.on('browse', ({ direction, steps }) => {
       // 转交牌阵
       this.deck.browse(direction * steps);
       // 刷新提示
       this._refreshHint();
     });
-    // 确认
+
+    // 键盘确认
     this.pointer.on('confirm', () => {
       // 转交统一处理
-      this.handleConfirm('pointer');
+      this.handleConfirm(null);
     });
+
     // 视差
     this.pointer.on('parallax', ({ x, y }) => {
       // 写入视差目标
@@ -323,10 +357,11 @@ export class App {
   }
 
   /**
-   * 统一处理「确认选牌」。
-   * @param {'gesture'|'pointer'} _source 事件来源（当前仅用于日志）
+   * 统一处理「选牌」。
+   * @param {object|null} [targetCard] 直接指定的卡牌（鼠标 / 手指点中的那张）；
+   *                                   传 null 表示抽取当前聚焦的牌
    */
-  handleConfirm(_source) {
+  handleConfirm(targetCard = null) {
     // 正在生成解读时不响应
     if (this._generating) return;
     // 已经选满三张则不再响应
@@ -335,8 +370,8 @@ export class App {
     // 若还在「等待提问」阶段，先隐式进入浏览状态
     if (this.state === 'asking') this._enterBrowsing();
 
-    // 执行选牌
-    const result = this.deck.confirm();
+    // 执行选牌：指定了牌就用指定的，否则用当前聚焦的牌
+    const result = this.deck.confirm(targetCard);
     // 选中失败（卡牌已被选走等）
     if (!result) {
       // 给出提示
@@ -446,6 +481,8 @@ export class App {
     this.environment.update(dt, elapsed);
     // 更新牌阵（布局、卡牌动画、粒子）
     this.deck.update(dt, elapsed);
+    // 推进指针惯性滚动（拖拽松手后的余速）
+    this.pointer.update(dt);
 
     // ------------------------------------------------------------------
     // 视差衰减：一段时间没有新的输入就把镜头缓缓拉回中位
