@@ -62,7 +62,7 @@ export class Stage {
     this.cameraTarget = new THREE.Vector3(0, 1.35, -0.6);
     // 相机当前注视点（用于平滑跟随）
     this._lookAt = this.cameraTarget.clone();
-    // 外部注入的视差偏移（由手势/鼠标控制）
+    // 外部注入的视差偏移（由鼠标位置控制）
     this.parallax = new THREE.Vector2(0, 0);
     // 外部注入的缩放倍率（由滚轮控制）
     this.zoom = 1;
@@ -272,7 +272,7 @@ export class Stage {
     // 平滑轨道的垂直偏移
     this._orbitSmooth.pitch = damp(this._orbitSmooth.pitch, this.orbit.pitch, 0.0008, dt);
 
-    // 计算水平视差：手势/鼠标的 x 位移映射到相机横向移动
+    // 计算水平视差：鼠标的 x 位移映射到相机横向移动
     const px = this.parallax.x * 0.85;
     // 计算垂直视差：方向取反，让“手往上抬镜头往下压”的直觉更自然
     const py = -this.parallax.y * 0.42;
@@ -365,7 +365,7 @@ export class Stage {
   }
 
   /**
-   * 设置视差（供手势与鼠标共用）。
+   * 设置视差。
    * @param {number} x 归一化横向位移，范围约 [-1, 1]
    * @param {number} y 归一化纵向位移，范围约 [-1, 1]
    */

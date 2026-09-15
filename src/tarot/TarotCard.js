@@ -133,10 +133,12 @@ export class TarotCard extends THREE.Group {
    * @param {object} cardData 卡牌数据（来自 cardData.js）
    * @param {object} deps 依赖注入
    * @param {import('./CardTextures.js').TextureFactory} deps.textures 贴图工厂
-   * @param {THREE.Texture} deps.backTexture 牌背贴图（78 张共用）
-   * @param {THREE.Material} deps.bodyMaterial 牌体材质（78 张共用）
+   * @param {THREE.Texture} deps.backTexture 牌背贴图（整副共用）
+   * @param {THREE.Material} deps.bodyMaterial 牌体材质（整副共用）
+   * @param {THREE.Material} deps.backMaterial 牌背材质（整副共用）
+   * @param {THREE.Material} deps.facePlaceholderMaterial 牌面占位材质（整副共用）
    */
-  constructor(cardData, { textures, backTexture, bodyMaterial }) {
+  constructor(cardData, { textures, backTexture, bodyMaterial, backMaterial, facePlaceholderMaterial }) {
     // 调用父类构造函数，把自己变成一个 Group
     super();
 
@@ -148,6 +150,10 @@ export class TarotCard extends THREE.Group {
     this.backTexture = backTexture;
     // 保存牌体共享材质
     this.bodyMaterial = bodyMaterial;
+    // 保存牌背共享材质
+    this.backMaterial = backMaterial;
+    // 保存牌面占位共享材质
+    this.facePlaceholderMaterial = facePlaceholderMaterial;
 
     // 当前是否已生成牌面贴图
     this._faceReady = false;
@@ -228,25 +234,9 @@ export class TarotCard extends THREE.Group {
     // ------------------------------------------------------------------
     // 3. 牌背平面
     // ------------------------------------------------------------------
-    // 使用与牌体一致的金属度，让牌背同样有金箔质感
-    const backMat = new THREE.MeshPhysicalMaterial({
-      // 牌背贴图（所有牌共用）
-      map: this.backTexture,
-      // 基础色：白色，只让贴图决定颜色
-      color: 0xffffff,
-      // 金属度偏低：卡纸是介质而不是金属，高金属度会让贴图被环境反射冲淡
-      metalness: 0.3,
-      // 粗糙度中等，保留一点覆膜卡牌的光泽
-      roughness: 0.52,
-      // 清漆层：只留一点点，太强的清漆会在聚光灯下糊成一片白
-      clearcoat: 0.35,
-      // 清漆层粗糙度偏高，把高光打散
-      clearcoatRoughness: 0.5,
-    });
-    // 保存材质引用以便后续释放
-    this.backMaterial = backMat;
-    // 创建牌背平面网格
-    const backPlane = new THREE.Mesh(plane, backMat);
+    // 直接复用牌阵下发的共享材质：78 张牌的牌背完全一致，没有必要各持一份。
+    // 注意必须用 this.xxx 访问——_build() 是方法，看不到构造函数里解构出来的局部变量。
+    const backPlane = new THREE.Mesh(plane, this.backMaterial);
     // 放到牌的负 Z 侧：必须贴在真实半厚度之外，否则会被牌体遮住
     backPlane.position.z = -halfDepth - 0.0008;
     // 绕 Y 轴转 π，让它的正面朝外
@@ -255,36 +245,20 @@ export class TarotCard extends THREE.Group {
     this.spin.add(backPlane);
 
     // ------------------------------------------------------------------
-    // 4. 牌面平面（延迟生成贴图）
+    // 4. 牌面平面（材质与贴图都延迟到第一次翻开时才创建）
     // ------------------------------------------------------------------
-    // 先用一张 1x1 的中性色贴图占位，避免材质缺少 map 导致渲染异常
-    const placeholder = new THREE.DataTexture(new Uint8Array([40, 36, 60, 255]), 1, 1);
-    // 标记为 sRGB
-    placeholder.colorSpace = THREE.SRGBColorSpace;
-    // 触发上传
-    placeholder.needsUpdate = true;
-    // 创建牌面材质
-    const faceMat = new THREE.MeshPhysicalMaterial({
-      // 初始使用占位贴图
-      map: placeholder,
-      // 近乎纯介质：牌面是印刷卡纸，不该有金属反射
-      metalness: 0.02,
-      // 粗糙度偏高，模拟纸张的漫反射，图案才不会被高光盖住
-      roughness: 0.78,
-      // 清漆只留极轻一层，避免聚光灯在牌面上糊出一片白
-      clearcoat: 0.12,
-      // 清漆粗糙度拉高，让残存的高光彻底散开
-      clearcoatRoughness: 0.6,
-    });
-    // 保存材质引用
-    this.faceMaterial = faceMat;
-    // 创建牌面平面网格
-    const facePlane = new THREE.Mesh(plane, faceMat);
+    // 未翻开时用共享的暗色占位材质即可——牌背朝上时玩家根本看不到这一面，
+    // 为 78 张牌各建一份牌面材质是纯粹的浪费。
+    // 真正需要时（ensureFaceTexture）再替换成带贴图的独立材质。
+    // 本张牌专属的牌面材质，未创建前为 null
+    this.faceMaterial = null;
+    // 创建牌面平面网格，初始使用共享占位材质
+    const facePlane = new THREE.Mesh(plane, this.facePlaceholderMaterial);
     // 放到牌的正 Z 侧：同样贴在真实半厚度之外
     facePlane.position.z = halfDepth + 0.0008;
     // 挂到 spin 下
     this.spin.add(facePlane);
-    // 记录牌面网格
+    // 记录牌面网格，后续换材质时要重新指向它
     this.facePlane = facePlane;
 
     // 把 model 挂到本组
@@ -326,15 +300,28 @@ export class TarotCard extends THREE.Group {
   }
 
   /**
-   * 确保牌面贴图已生成（首次翻开或首次聚焦时调用）。
+   * 确保牌面贴图已生成（首次翻开时调用）。
+   * 这是「按需画牌」的入口：78 张牌在启动时只共享一张牌背贴图，
+   * 只有真正被翻开的那几张才会现场绘制牌面并建立独立材质。
    */
   ensureFaceTexture() {
     // 已生成则直接返回
     if (this._faceReady) return;
-    // 生成贴图并写入材质
-    this.faceMaterial.map = this.textures.createCardFace(this.data);
-    // 贴图更新后需要重新编译材质
-    this.faceMaterial.needsUpdate = true;
+    // 创建本张牌专属的牌面材质
+    this.faceMaterial = new THREE.MeshPhysicalMaterial({
+      // 现场绘制并缓存过的牌面贴图
+      map: this.textures.createCardFace(this.data),
+      // 近乎纯介质：牌面是印刷卡纸，不该有金属反射
+      metalness: 0.02,
+      // 粗糙度偏高，模拟纸张的漫反射，图案才不会被高光盖住
+      roughness: 0.78,
+      // 清漆只留极轻一层，避免聚光灯在牌面上糊出一片白
+      clearcoat: 0.12,
+      // 清漆粗糙度拉高，让残存的高光彻底散开
+      clearcoatRoughness: 0.6,
+    });
+    // 把牌面网格的材质换成新建的这份
+    this.facePlane.material = this.faceMaterial;
     // 标记为已生成
     this._faceReady = true;
   }
@@ -574,8 +561,11 @@ export class TarotCard extends THREE.Group {
     // ------------------------------------------------------------------
     // 6. 聚焦时给表面加一点自发光，让牌面“透出光来”
     // ------------------------------------------------------------------
-    // 牌面自发光强度随聚焦程度变化
-    this.faceMaterial.emissive.setRGB(0.32 * this._focus, 0.24 * this._focus, 0.1 * this._focus);
+    // 牌面材质是懒创建的（未翻开时不存在），因此这里必须先判空
+    if (this.faceMaterial) {
+      // 自发光强度随聚焦程度变化
+      this.faceMaterial.emissive.setRGB(0.32 * this._focus, 0.24 * this._focus, 0.1 * this._focus);
+    }
   }
 
   /**
@@ -599,9 +589,7 @@ export class TarotCard extends THREE.Group {
     this.glow.geometry.dispose();
     // 释放光晕材质
     this.glowMaterial.dispose();
-    // 释放牌面与牌背材质（贴图由 TextureFactory 管理）
-    this.faceMaterial.dispose();
-    // 释放牌背材质
-    this.backMaterial.dispose();
+    // 只释放本张牌专属的牌面材质（共享材质由 Deck 统一释放，不能在这里销毁）
+    if (this.faceMaterial) this.faceMaterial.dispose();
   }
 }

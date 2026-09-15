@@ -1,15 +1,18 @@
 // ============================================================================
-// interaction/PointerControls.js —— 键鼠降级操作
+// interaction/PointerControls.js —— 键鼠控制
 // ----------------------------------------------------------------------------
-// 手势并非人人可用（没有摄像头、拒绝授权、环境不支持 https），
-// 因此键鼠必须是一条完整可用的操作路径，而不是摆设。
-// 本模块把键鼠事件翻译成与手势完全一致的语义事件，App 层无需区分来源。
+// 本模块把键鼠事件翻译成语义事件（browse / confirm / parallax），
+// App 层只处理语义，不关心它们由什么设备产生。
 //
 // 键位：
-//   ArrowLeft / ArrowRight / A / D   切换聚焦的牌
+//   ArrowLeft / ArrowRight / A / D   切换聚焦的牌（长按可连续滑动）
 //   Space / Enter / 点击画布         确认当前聚焦的牌
 //   鼠标拖拽                         转动视角
 //   滚轮                             推近 / 拉远
+//
+// 关于无限滑动：长按方向键时浏览器会持续触发 keydown，本模块照单全收，
+// 因此按住不放就能让牌阵一直滑下去。整副 78 张牌是首尾相接的闭环，
+// 焦点索引没有上下限，所以永远不会出现「滑到头」而停住的情况。
 // ============================================================================
 
 // 引入事件总线
@@ -21,6 +24,15 @@ import { clamp } from '../core/mathUtils.js';
 const DRAG_SENSITIVITY = 0.0022;
 // 滚轮灵敏度：每 100 像素 deltaY 对应的缩放变化
 const WHEEL_SENSITIVITY = 0.0009;
+// 单次浏览的步数。
+//
+// 这里有一个必须踩对的细节：整副牌是 78 张铺成的一圈，
+// 而一次跨越 N 张，等价于在一圈里以 N 为步长跳跃。
+// 只有当 N 与 78 互质时，这个跳跃序列才会遍历全部 78 张牌；
+// 若取 3（78 = 3 × 26），就只会循环访问相隔 26 个位置的 26 张牌，
+// 剩下 52 张永远翻不到——这是一个非常隐蔽、但完全会让功能失效的坑。
+// 取 5（gcd(5, 78) = 1）既能一趟走遍全副牌，约 23 度的跨度手感也正好。
+const BROWSE_STEPS = 5;
 // 缩放的上下限
 const ZOOM_MIN = 0.62;
 // 缩放上限
@@ -29,7 +41,7 @@ const ZOOM_MAX = 1.45;
 /**
  * PointerControls —— 键鼠控制器
  * @extends Emitter
- * 事件与手势识别器保持一致：'browse' / 'confirm' / 'parallax'
+ * 事件：'browse' 浏览 / 'confirm' 确认 / 'parallax' 视差
  */
 export class PointerControls extends Emitter {
   /**
@@ -135,7 +147,7 @@ export class PointerControls extends Emitter {
       const nx = (e.clientX / window.innerWidth) * 2 - 1;
       // 归一化到 -1 ~ 1
       const ny = (e.clientY / window.innerHeight) * 2 - 1;
-      // 广播视差事件，强度比手势弱一些，避免喧宾夺主
+      // 广播视差事件，强度刻意压低，避免喧宾夺主
       this.emit('parallax', { x: nx * 0.35, y: ny * 0.35 });
       // 兼容鼠标：同时产生视差
       return;
@@ -215,8 +227,8 @@ export class PointerControls extends Emitter {
       case 'A':
         // 阻止页面滚动
         e.preventDefault();
-        // 广播浏览事件（与手势 swipe 语义一致）
-        this.emit('browse', { direction: -1, steps: 1, source: 'keyboard' });
+        // 广播浏览事件
+        this.emit('browse', { direction: -1, steps: BROWSE_STEPS, source: 'keyboard' });
         // 结束
         break;
       // 向右浏览
@@ -226,7 +238,7 @@ export class PointerControls extends Emitter {
         // 阻止页面滚动
         e.preventDefault();
         // 广播浏览事件
-        this.emit('browse', { direction: 1, steps: 1, source: 'keyboard' });
+        this.emit('browse', { direction: 1, steps: BROWSE_STEPS, source: 'keyboard' });
         // 结束
         break;
       // 确认

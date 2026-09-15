@@ -8,8 +8,9 @@
 //   asking    等待用户写下问题
 //   browsing  正在浏览牌阵并挑选三张牌
 //   reading   三张已选，解读面板已打开
-// 无论操作来自摄像头手势、键鼠，还是 UI 按钮，最终都汇聚到同一组方法上，
-// 因此三条输入路径的行为完全一致。
+//
+// 牌阵是 78 张牌铺成的闭环，浏览索引没有上下限，因此可以无限滑动、永远不会到头。
+// 所有操作（键鼠、UI 按钮）都汇聚到同一组方法上，行为完全一致。
 // ============================================================================
 
 // 引入三维舞台
@@ -20,12 +21,6 @@ import { Environment } from './Environment.js';
 import { TextureFactory } from '../tarot/CardTextures.js';
 // 引入牌阵管理器
 import { Deck } from '../tarot/Deck.js';
-// 引入手势识别器
-import { GestureRecognizer } from '../interaction/GestureRecognizer.js';
-// 引入手部追踪器
-import { HandTracker } from '../interaction/HandTracker.js';
-// 引入手部叠加层
-import { HandOverlay } from '../interaction/HandOverlay.js';
 // 引入键鼠控制器
 import { PointerControls } from '../interaction/PointerControls.js';
 // 引入界面管理器
@@ -73,12 +68,6 @@ export class App {
     this.deck = null;
     // 界面管理器
     this.ui = null;
-    // 手势识别器
-    this.recognizer = null;
-    // 手部追踪器
-    this.handTracker = null;
-    // 手部叠加层
-    this.overlay = null;
     // 键鼠控制器
     this.pointer = null;
 
@@ -101,8 +90,6 @@ export class App {
     // 1. 界面管理器（先建，方便后面实时汇报加载进度）
     // ------------------------------------------------------------------
     this.ui = new UIManager({
-      // 手势开关
-      onToggleGesture: () => this.toggleGesture(),
       // 提交问题
       onAsk: (q) => this.submitQuestion(q),
       // 重置牌局
@@ -164,29 +151,8 @@ export class App {
     });
 
     // ------------------------------------------------------------------
-    // 6. 交互层：手势 + 键鼠
+    // 6. 交互层：键鼠
     // ------------------------------------------------------------------
-    this.recognizer = new GestureRecognizer();
-    // 绑定手势事件
-    this._bindGestureEvents();
-    // 创建手部追踪器
-    this.handTracker = new HandTracker({
-      // 摄像头预览元素
-      video: document.getElementById('hand-video'),
-    });
-    // 创建手部叠加层
-    this.overlay = new HandOverlay({
-      // 叠加画布
-      canvas: document.getElementById('hand-overlay'),
-      // 手势光标元素
-      cursor: this.ui.gestureCursor,
-      // 手势识别器
-      recognizer: this.recognizer,
-    });
-    // 监听追踪状态变化
-    this._bindTrackerEvents();
-
-    // 键鼠控制器始终启用，作为手势的完整替代路径
     this.pointer = new PointerControls({ canvas: this.canvas, stage: this.stage });
     // 绑定键鼠事件
     this._bindPointerEvents();
@@ -283,23 +249,10 @@ export class App {
   _refreshHint() {
     // 已选数量
     const n = this.deck.selected.length;
-    // 手势是否开启
-    const gestureOn = this.handTracker && this.handTracker.started;
-    // 依据输入方式给出不同的提示
-    if (gestureOn) {
-      // 手势模式提示
-      this.ui.setHint(
-        n === 0
-          ? '✋ 张开手掌左右滑动浏览 · ✊ 握拳确认第一张牌'
-          : `✋ 滑动继续浏览 · ✊ 握拳确认第 ${n + 1} 张牌`
-      );
-      // 结束
-      return;
-    }
-    // 键鼠模式提示
+    // 78 张牌铺成闭环，可以无限滑动，因此提示里要明确「循环」这件事
     this.ui.setHint(
       n === 0
-        ? '← / → 浏览牌阵 · 空格确认第一张牌'
+        ? '← / → 浏览牌阵（可无限循环）· 空格确认第一张牌'
         : `← / → 继续浏览 · 空格确认第 ${n + 1} 张牌`
     );
   }
@@ -309,90 +262,12 @@ export class App {
   // ==========================================================================
 
   /**
-   * 绑定手势识别器事件。
+   * 绑定键鼠事件。
+   *
+   * 说明：项目早期版本提供过摄像头手势操作，实测在同一台机器上
+   * MediaPipe 推理会持续占用 GPU、把渲染帧率拖到难以忍受，
+   * 收益远小于代价，因此已整体移除。当前的浏览与选牌全部由键鼠驱动。
    */
-  _bindGestureEvents() {
-    // 滑动：浏览牌阵
-    this.recognizer.on('swipe', ({ direction, steps }) => {
-      // 阅读状态下不再响应浏览
-      this.deck.browse(direction * steps);
-      // 给出轻微提示
-      this.ui.setHandBadge(direction > 0 ? '→ 向右滑动' : '← 向左滑动');
-      // 刷新底部提示
-      this._refreshHint();
-    });
-
-    // 握拳保持：确认当前聚焦的牌
-    this.recognizer.on('confirm', () => {
-      // 转交统一处理
-      this.handleConfirm('gesture');
-    });
-
-    // 手掌移动：驱动镜头视差
-    this.recognizer.on('move', ({ x, y }) => {
-      // 把 0~1 的归一化坐标映射到 -1~1
-      const nx = (x - 0.5) * 2;
-      // y 方向同样映射
-      const ny = (y - 0.5) * 2;
-      // 写入视差目标
-      this._parallaxTarget.x = nx;
-      // 写入视差目标
-      this._parallaxTarget.y = ny;
-      // 刷新视差有效期
-      this._parallaxTTL = PARALLAX_TIMEOUT;
-    });
-
-    // 姿态变化：更新角标
-    this.recognizer.on('posture', ({ posture }) => {
-      // 依姿态切换角标文案
-      if (posture === 'open') this.ui.setHandBadge('✋ 张开 · 滑动浏览');
-      // 握拳
-      else if (posture === 'fist') this.ui.setHandBadge('✊ 握拳 · 保持以确认');
-      // 其它
-      else this.ui.setHandBadge('手势未识别');
-    });
-
-    // 手部出现 / 消失
-    this.recognizer.on('hand', ({ present }) => {
-      // 更新角标
-      this.ui.setHandBadge(present ? '已检测到手' : '等待手势');
-      // 手离开时把视差归零
-      if (!present) this._parallaxTTL = 0;
-    });
-  }
-
-  /**
-   * 绑定手部追踪器的状态事件。
-   */
-  _bindTrackerEvents() {
-    // 状态变化
-    this.handTracker.on('status', ({ state, message }) => {
-      // 切换按钮状态
-      this.ui.setGestureButton(state === 'ready', state === 'loading');
-      // 顶部状态提示
-      if (state === 'loading') this.ui.setStatus(message, 'warn');
-      // 就绪
-      else if (state === 'ready') this.ui.setStatus('手势已开启', 'ok');
-      // 失败或拒绝
-      else if (state === 'error' || state === 'denied') this.ui.setStatus(message, 'warn');
-      // 关闭
-      else this.ui.setStatus('手势已关闭', 'idle');
-      // 弹出提示条
-      this.ui.toast(message);
-      // 刷新底部提示
-      this._refreshHint();
-    });
-
-    // 每一帧的推理结果：交给手势识别器与叠加层
-    this.handTracker.on('frame', ({ landmarks, videoWidth, videoHeight, dt: inferenceDt }) => {
-      // 把关键点交给识别器，并传入这一帧真实经过的时间
-      // （不能固定传 1/60：推理上限是 30fps，那样会让所有手势判定时长翻倍）
-      this.recognizer.feed(landmarks, inferenceDt || 1 / 30);
-      // 把关键点交给叠加层绘制
-      this.overlay.setFrame(landmarks, videoWidth, videoHeight);
-    });
-  }
-
   /**
    * 绑定键鼠事件。
    */
@@ -445,11 +320,6 @@ export class App {
     this.ui.toast(question ? '问题已记下 · 开始浏览牌阵' : '未填写问题 · 将使用默认指引');
     // 进入浏览状态
     this._enterBrowsing();
-    // 若手势已开启，提示手势用法
-    if (this.handTracker.started) {
-      // 提示
-      this.ui.toast('✋ 张开手掌滑动浏览 · ✊ 握拳确认', 3200);
-    }
   }
 
   /**
@@ -562,43 +432,6 @@ export class App {
     this._enterAsking();
   }
 
-  /**
-   * 切换手势追踪的开关。
-   */
-  async toggleGesture() {
-    // 已开启则关闭
-    if (this.handTracker.started) {
-      // 停止追踪
-      this.handTracker.stop();
-      // 重置识别器状态
-      this.recognizer.reset();
-      // 隐藏摄像头面板
-      this.ui.setCameraPanelVisible(false);
-      // 隐藏手势光标
-      if (this.ui.gestureCursor) this.ui.gestureCursor.hidden = true;
-      // 刷新提示
-      this._refreshHint();
-      // 结束
-      return;
-    }
-
-    // 显示摄像头面板（先显示，让用户看到权限弹窗时画面已经在准备）
-    this.ui.setCameraPanelVisible(true);
-    // 按钮进入加载态
-    this.ui.setGestureButton(false, true);
-    // 启动追踪
-    const ok = await this.handTracker.start();
-    // 启动失败
-    if (!ok) {
-      // 隐藏面板
-      this.ui.setCameraPanelVisible(false);
-      // 恢复按钮
-      this.ui.setGestureButton(false, false);
-      // 刷新提示（回到键鼠）
-      this._refreshHint();
-    }
-  }
-
   // ==========================================================================
   // 每帧更新
   // ==========================================================================
@@ -613,14 +446,6 @@ export class App {
     this.environment.update(dt, elapsed);
     // 更新牌阵（布局、卡牌动画、粒子）
     this.deck.update(dt, elapsed);
-
-    // 手势开启时才跑推理与叠加层
-    if (this.handTracker.started) {
-      // 执行一次推理（内部有帧率上限）
-      this.handTracker.update(dt);
-      // 绘制叠加层与光标
-      this.overlay.update(dt);
-    }
 
     // ------------------------------------------------------------------
     // 视差衰减：一段时间没有新的输入就把镜头缓缓拉回中位
@@ -668,8 +493,6 @@ export class App {
    * 释放全部资源。
    */
   dispose() {
-    // 停止手部追踪
-    this.handTracker?.stop();
     // 关闭键鼠控制
     this.pointer?.disable();
     // 释放牌阵

@@ -6,10 +6,8 @@
      #stage                 z-index 0    3D 画布
      .fx-vignette           z-index 1    暗角/噪点装饰
      #hud / #focus-bar      z-index 20   常驻 HUD
-     #camera-panel /
-     #ask-panel             z-index 30   功能面板
+     #ask-panel             z-index 30   提问面板
      #reading-panel         z-index 40   解读面板
-     #gesture-cursor        z-index 45   手势光标
      #toast                 z-index 60   瞬态提示
      #help-modal            z-index 70   弹层
      #loading               z-index 90   加载遮罩
@@ -94,7 +92,7 @@ body {
   /* 抗锯齿优化，让浅色文字在深色背景上更柔和 */
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-  /* 禁止长按选中文本，避免手势/拖拽操作时误选 */
+  /* 禁止长按选中文本，避免拖拽操作时误选 */
   -webkit-user-select: none;
   user-select: none;
   /* 禁止移动端点击高亮 */
@@ -171,7 +169,7 @@ textarea {
   z-index: 0;
   /* 画布自身使用块级显示，消除行内元素间隙 */
   display: block;
-  /* 触摸操作交给脚本处理，禁止浏览器默认手势 */
+  /* 触摸操作交给脚本处理，禁止浏览器默认的滚动与缩放手势 */
   touch-action: none;
 }
 
@@ -550,163 +548,6 @@ textarea {
     opacity: 1;
     transform: translateY(0);
   }
-}
-
-/* --------------------------------------------------------------------------
-   6. 左侧摄像头面板
-   -------------------------------------------------------------------------- */
-
-/* 面板定位在左下角 */
-#camera-panel {
-  /* 固定定位 */
-  position: fixed;
-  /* 距左边距 */
-  left: 26px;
-  /* 距底边距 */
-  bottom: 26px;
-  /* 宽度 */
-  width: 268px;
-  /* 层级 */
-  z-index: 30;
-  /* 面板展开/收起的过渡 */
-  transition: transform 0.5s var(--ease), opacity 0.4s var(--ease);
-  /* 左侧滑入动画 */
-  animation: slide-in-left 0.7s var(--ease) both;
-}
-
-/* 收起状态：整体平移出屏幕左缘（保留 6px 提示条） */
-#camera-panel.is-folded {
-  transform: translateX(calc(-100% + 18px));
-  opacity: 0.85;
-}
-
-/* 摄像头画面容器：固定 4:3 比例 */
-.camera-stage {
-  /* 相对定位，供视频与画布绝对定位 */
-  position: relative;
-  /* 宽高比 4:3 */
-  aspect-ratio: 4 / 3;
-  /* 背景色 */
-  background: #05040a;
-  /* 超出裁剪 */
-  overflow: hidden;
-  /* 底部分割线 */
-  border-bottom: 1px solid rgba(227, 195, 122, 0.12);
-}
-
-/* 摄像头视频：左右镜像，符合“照镜子”的直觉 */
-#hand-video {
-  /* 绝对定位填满容器 */
-  position: absolute;
-  inset: 0;
-  /* 撑满 */
-  width: 100%;
-  height: 100%;
-  /* 等比裁剪填满，避免变形 */
-  object-fit: cover;
-  /* 水平镜像 */
-  transform: scaleX(-1);
-  /* 降低亮度与饱和度，让画面融入整体暗调 */
-  filter: brightness(0.72) saturate(0.7) contrast(1.05);
-}
-
-/* 关键点叠加画布：与视频同层叠放 */
-#hand-overlay {
-  /* 绝对定位填满容器 */
-  position: absolute;
-  inset: 0;
-  /* 撑满 */
-  width: 100%;
-  height: 100%;
-  /* 不拦截鼠标事件 */
-  pointer-events: none;
-}
-
-/* 摄像头角标：显示当前识别到的手势 */
-.camera-badge {
-  /* 绝对定位到右下角 */
-  position: absolute;
-  right: 8px;
-  bottom: 8px;
-  /* 内边距 */
-  padding: 4px 10px;
-  /* 胶囊圆角 */
-  border-radius: var(--r-chip);
-  /* 半透明深色底 */
-  background: rgba(7, 6, 11, 0.72);
-  /* 金色描边 */
-  border: 1px solid rgba(227, 195, 122, 0.35);
-  /* 小字号 */
-  font-size: 11px;
-  /* 金色文字 */
-  color: var(--c-gold);
-  /* 字距 */
-  letter-spacing: 0.06em;
-  /* 背景模糊 */
-  backdrop-filter: blur(8px);
-}
-
-/* 手势图例容器 */
-.gesture-legend {
-  /* 上下内边距 */
-  padding: 12px 14px 14px 14px;
-  /* 纵向排列 */
-  display: flex;
-  /* 纵向间距 */
-  flex-direction: column;
-  gap: 10px;
-}
-
-/* 单条图例 */
-.legend-item {
-  /* 横向排列 */
-  display: flex;
-  /* 垂直居中 */
-  align-items: center;
-  /* 间距 */
-  gap: 10px;
-}
-
-/* 图例中的手势图标 */
-.legend-glyph {
-  /* 字号 */
-  font-size: 17px;
-  /* 固定宽度让两行文字对齐 */
-  width: 22px;
-  /* 居中 */
-  text-align: center;
-  /* 轻微发光 */
-  filter: drop-shadow(0 0 6px rgba(227, 195, 122, 0.5));
-}
-
-/* 图例文字容器：两行竖排 */
-.legend-text {
-  /* 纵向排列 */
-  display: flex;
-  /* 纵向排列 */
-  flex-direction: column;
-  /* 行距紧凑 */
-  gap: 2px;
-}
-
-/* 图例主文案 */
-.legend-text b {
-  /* 字号 */
-  font-size: 12px;
-  /* 字重 */
-  font-weight: 600;
-  /* 正文色 */
-  color: var(--c-text);
-}
-
-/* 图例副文案 */
-.legend-text em {
-  /* 字号 */
-  font-size: 11px;
-  /* 常规字重 */
-  font-style: normal;
-  /* 弱化颜色 */
-  color: var(--c-text-faint);
 }
 
 /* --------------------------------------------------------------------------
@@ -1441,92 +1282,6 @@ body.is-reading #ask-panel {
 }
 
 /* --------------------------------------------------------------------------
-   10. 手势光标
-   -------------------------------------------------------------------------- */
-
-/* 光标容器：由脚本设置 translate 定位 */
-#gesture-cursor {
-  /* 固定定位 */
-  position: fixed;
-  /* 左上角为锚点 */
-  top: 0;
-  left: 0;
-  /* 层级 */
-  z-index: 45;
-  /* 不拦截鼠标 */
-  pointer-events: none;
-  /* 变换过渡（无过渡，位置由脚本每帧直接设置以避免拖影） */
-  will-change: transform;
-}
-
-/* 外环 */
-.cursor-ring {
-  /* 绝对定位居中 */
-  position: absolute;
-  /* 以中心对齐锚点 */
-  left: 0;
-  top: 0;
-  /* 固定尺寸 */
-  width: 46px;
-  height: 46px;
-  /* 通过负外边距实现居中 */
-  margin: -23px 0 0 -23px;
-  /* 圆形 */
-  border-radius: 50%;
-  /* 金色描边 */
-  border: 1.5px solid rgba(227, 195, 122, 0.75);
-  /* 金色外发光 */
-  box-shadow: 0 0 22px rgba(227, 195, 122, 0.35), inset 0 0 18px rgba(227, 195, 122, 0.2);
-  /* 缓慢呼吸 */
-  animation: cursor-breathe 2.4s var(--ease) infinite;
-}
-
-/* 内点 */
-.cursor-core {
-  /* 绝对定位居中 */
-  position: absolute;
-  /* 以中心对齐锚点 */
-  left: 0;
-  top: 0;
-  /* 固定尺寸 */
-  width: 6px;
-  height: 6px;
-  /* 居中 */
-  margin: -3px 0 0 -3px;
-  /* 圆形 */
-  border-radius: 50%;
-  /* 金色实心 */
-  background: var(--c-gold-hi);
-  /* 发光 */
-  box-shadow: 0 0 12px var(--c-gold);
-}
-
-/* 光标收缩态：握拳确认时收缩，形成“按下”的反馈 */
-#gesture-cursor.is-fist .cursor-ring {
-  /* 缩放 */
-  transform: scale(0.55);
-  /* 描边加粗且更亮 */
-  border-color: var(--c-gold-hi);
-  /* 发光增强 */
-  box-shadow: 0 0 34px rgba(227, 195, 122, 0.75), inset 0 0 22px rgba(227, 195, 122, 0.5);
-  /* 收缩过渡 */
-  transition: transform 0.16s var(--ease), box-shadow 0.16s var(--ease);
-}
-
-/* 光标呼吸关键帧 */
-@keyframes cursor-breathe {
-  0%,
-  100% {
-    transform: scale(1);
-    opacity: 0.9;
-  }
-  50% {
-    transform: scale(1.12);
-    opacity: 0.62;
-  }
-}
-
-/* --------------------------------------------------------------------------
    11. 瞬态提示条
    -------------------------------------------------------------------------- */
 
@@ -1977,20 +1732,6 @@ body.is-reading #ask-panel {
     bottom: calc(10px + env(safe-area-inset-bottom, 0px));
   }
 
-  /* ------------------------------------------------------------------
-     摄像头面板：缩小并移到左上，避免与底部面板抢空间
-     ------------------------------------------------------------------ */
-  #camera-panel {
-    width: 152px;
-    left: 12px;
-    top: 74px;
-    bottom: auto;
-  }
-
-  /* 窄屏下手势图例隐藏，节约高度（面板本身已足够说明） */
-  .gesture-legend {
-    display: none;
-  }
 }
 
 /* 超窄屏（小屏手机）：进一步压缩 */
@@ -1998,18 +1739,6 @@ body.is-reading #ask-panel {
   /* 品牌符号缩小 */
   .brand-mark {
     font-size: 20px;
-  }
-
-  /* 手势按钮只保留图标，节省横向空间 */
-  #btn-gesture .btn-label {
-    display: none;
-  }
-
-  /* 手势按钮改为正方形 */
-  #btn-gesture {
-    width: 38px;
-    height: 38px;
-    padding: 0;
   }
 
   /* 弹层内边距收紧 */

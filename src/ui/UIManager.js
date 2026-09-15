@@ -23,7 +23,6 @@ export class UIManager {
   /**
    * 构造函数。
    * @param {object} callbacks 交互回调集合
-   * @param {Function} callbacks.onToggleGesture 点击「开启手势」时触发
    * @param {Function} callbacks.onAsk 点击「开始抽牌」时触发，参数为问题文本
    * @param {Function} callbacks.onReset 点击「重新开始」时触发
    * @param {Function} callbacks.onReadingClose 关闭解读面板时触发
@@ -39,23 +38,12 @@ export class UIManager {
     this.statusChip = document.getElementById('status-chip');
     // 状态文案
     this.statusText = document.getElementById('status-text');
-    // 手势按钮
-    this.btnGesture = document.getElementById('btn-gesture');
-    // 手势按钮内的文字节点
-    this.btnGestureLabel = this.btnGesture?.querySelector('.btn-label');
     // 帮助按钮
     this.btnHelp = document.getElementById('btn-help');
     // 帮助弹层
     this.helpModal = document.getElementById('help-modal');
     // 关闭帮助弹层
     this.btnHelpClose = document.getElementById('btn-help-close');
-
-    // 摄像头面板
-    this.cameraPanel = document.getElementById('camera-panel');
-    // 摄像头折叠按钮
-    this.btnCameraFold = document.getElementById('btn-camera-fold');
-    // 手势状态角标
-    this.handBadge = document.getElementById('hand-badge');
 
     // 牌位指示点容器
     this.slotDotsEl = document.getElementById('slot-dots');
@@ -81,9 +69,6 @@ export class UIManager {
     this.readingBody = document.getElementById('reading-body');
     // 关闭解读面板
     this.btnReadingClose = document.getElementById('btn-reading-close');
-
-    // 手势光标
-    this.gestureCursor = document.getElementById('gesture-cursor');
 
     // 提示条
     this.toastEl = document.getElementById('toast');
@@ -111,14 +96,6 @@ export class UIManager {
    */
   bindEvents() {
     // ------------------------------------------------------------------
-    // 手势开关
-    // ------------------------------------------------------------------
-    this.btnGesture?.addEventListener('click', () => {
-      // 转交给外部处理
-      this.callbacks.onToggleGesture?.();
-    });
-
-    // ------------------------------------------------------------------
     // 帮助弹层
     // ------------------------------------------------------------------
     this.btnHelp?.addEventListener('click', () => {
@@ -134,16 +111,6 @@ export class UIManager {
     this.helpModal?.addEventListener('click', (e) => {
       // 只有点在遮罩本身（而非内容卡片）时才关闭
       if (e.target === this.helpModal) this.helpModal.hidden = true;
-    });
-
-    // ------------------------------------------------------------------
-    // 摄像头面板折叠
-    // ------------------------------------------------------------------
-    this.btnCameraFold?.addEventListener('click', () => {
-      // 切换折叠状态
-      const folded = this.cameraPanel.classList.toggle('is-folded');
-      // 同步按钮文案
-      this.btnCameraFold.textContent = folded ? '展开' : '收起';
     });
 
     // ------------------------------------------------------------------
@@ -315,51 +282,7 @@ export class UIManager {
   }
 
   /**
-   * 设置手势按钮的文案与状态。
-   * @param {boolean} on 手势是否已开启
-   * @param {boolean} [loading] 是否正在加载
-   */
-  setGestureButton(on, loading = false) {
-    // 按钮不存在则跳过
-    if (!this.btnGesture) return;
-    // 加载中时禁用按钮并提示
-    if (loading) {
-      // 禁用
-      this.btnGesture.disabled = true;
-      // 文案
-      if (this.btnGestureLabel) this.btnGestureLabel.textContent = '加载中…';
-      // 结束
-      return;
-    }
-    // 恢复可用
-    this.btnGesture.disabled = false;
-    // 按状态写入文案
-    if (this.btnGestureLabel) this.btnGestureLabel.textContent = on ? '关闭手势' : '开启手势';
-    // 同步高亮样式
-    this.btnGesture.style.borderColor = on ? 'rgba(227, 195, 122, 0.6)' : '';
-    // 同步文字色
-    this.btnGesture.style.color = on ? 'var(--c-gold)' : '';
-  }
-
-  /**
-   * 切换摄像头面板的显示。
-   * @param {boolean} visible 是否显示
-   */
-  setCameraPanelVisible(visible) {
-    // 元素存在才操作
-    if (this.cameraPanel) this.cameraPanel.hidden = !visible;
-  }
-
-  /**
-   * 设置手势状态角标文案。
-   * @param {string} text 文案
-   */
-  setHandBadge(text) {
-    // 元素存在则写入
-    if (this.handBadge) this.handBadge.textContent = text;
-  }
-
-  /**
+   * 显示提示条。  /**
    * 显示提示条。
    * @param {string} text 提示文案
    * @param {number} [duration] 显示时长（毫秒）

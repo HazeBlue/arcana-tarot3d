@@ -24,6 +24,19 @@ export function clamp(value, min, max) {
   return Math.min(Math.max(value, min), max);
 }
 
+/**
+ * 恒正取模：把任意整数映射到 [0, m) 区间。
+ * JavaScript 的 % 对负数返回负值（例如 -1 % 78 === -1），
+ * 而在环形牌阵里我们需要它稳定地落到 0~77，因此单独封装一个。
+ * @param {number} n 被除数（可为负数）
+ * @param {number} m 模数（正整数）
+ * @returns {number} [0, m) 区间内的结果
+ */
+export function mod(n, m) {
+  // 先取模，再加一次模数并再取一次模，保证结果恒为非负
+  return ((n % m) + m) % m;
+}
+
 // 把角度限制到 (-180, 180] 度，用于环形排列时取最短路径
 export function wrapDegrees(deg) {
   // 先对 360 取模把角度收进 (-360, 360)

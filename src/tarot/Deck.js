@@ -2,13 +2,19 @@
 // tarot/Deck.js —— 牌阵管理器
 // ----------------------------------------------------------------------------
 // 这是整个应用的核心业务对象，负责：
-//   1. 构建 32 张牌组成的弧形牌阵（真实塔罗洗牌后取一部分铺开）；
+//   1. 构建完整 78 张牌组成的环形牌阵；
 //   2. 维护「聚焦索引」，让被聚焦的牌浮起、放大、发光；
 //   3. 处理选牌：卡牌沿贝塞尔弧线飞向「现状 / 转折 / 走向」三个桌面牌位并翻开；
 //   4. 在选牌瞬间喷射金色粒子，强化仪式感；
 //   5. 重置牌局，重新洗牌发牌。
-// 布局采用「相对角度轮播」：每张牌的角度是 (自身序号 - 聚焦索引) × 步长，
-// 因此移动聚焦时整副牌会像轮盘一样平滑滑动，天然支持环形无限滚动。
+//
+// 布局采用「环形相对角度轮播」，这是无限滑动的关键：
+//   每张牌的角度 = wrapDegrees((自身序号 - 聚焦索引) × 步长)
+//   而步长被精确设置为 360 / 78 度——也就是说，78 张牌正好铺满一整圈。
+//   由此得到两个重要性质：
+//     ① 序号与角度一一对应，环形滚动时永远不会有两张牌落在同一个角度上；
+//     ② 整副牌首尾天然相接，聚焦索引可以无限增大或减小，
+//        折算到 (-180, 180] 后永远有牌可用，因此不存在「滑到头」的状态。
 // ============================================================================
 
 // 引入 three.js 核心命名空间
@@ -18,26 +24,26 @@ import { TarotCard } from './TarotCard.js';
 // 引入牌库与洗牌函数
 import { createShuffledDeck } from './cardData.js';
 // 引入数学工具
-import { damp, clamp, wrapDegrees, Easing } from '../core/mathUtils.js';
+import { damp, clamp, wrapDegrees, mod, Easing } from '../core/mathUtils.js';
 
 // ---------------------------------------------------------------------------
 // 牌阵布局参数：集中定义便于统一调参
 // ---------------------------------------------------------------------------
 
-// 牌阵中展示的卡牌数量。
-// 取值需要与步长配合：数量 × 步长决定整副牌的展开角度，
-// 而步长 × 半径决定相邻牌的实际间距——间距太小会让 32 张牌互相压盖 65%，
-// 牌背上的曼陀罗纹样会被压成碎片，整体看起来像一堵金色板墙。
-const FAN_COUNT = 23;
+// 牌阵中展示的卡牌数量：一副完整的塔罗牌共 78 张，这里全部铺进牌阵。
+// 牌面贴图是懒生成的（牌背朝上时整副牌只共用一张牌背贴图），
+// 因此 78 张牌在启动阶段几乎不产生额外显存开销。
+const FAN_COUNT = 78;
 // 相邻卡牌之间的角度步长（角度制）。
-// 12 度 × 5.6 的半径 ≈ 1.17 个世界单位间距，对 1.5 宽的牌来说只有约两成重叠——
-// 每一张牌的曼陀罗纹样都能完整露出来，整体读起来是"扇形铺开的一副牌"
-// 而不是一堵互相压盖的板墙。
-const FAN_STEP_DEG = 12;
+// 必须是 360 / 78，让 78 张牌恰好铺满一圈——这是「无碰撞」与「无限滑动」的前提。
+const FAN_STEP_DEG = 360 / FAN_COUNT;
 // 角度步长的弧度值
 const FAN_STEP = (FAN_STEP_DEG * Math.PI) / 180;
-// 牌阵所在圆的半径：越大牌阵越平缓，同时卡牌在画面中越小
-const FAN_RADIUS = 5.6;
+// 牌阵所在圆的半径。
+// 78 张牌铺满一圈后，相邻间距 = 半径 × 步长弧度 ≈ 0.58 个世界单位，
+// 相对 1.5 宽的牌约为六成重叠——读起来就是一副"密密扇开"的牌。
+// 半径再小会让重叠过重糊成一片，再大则卡牌在画面里过小。
+const FAN_RADIUS = 7.2;
 // 牌阵圆心的 Z 坐标（圆心往后推，牌阵就整体靠后）
 const FAN_CENTER_Z = 1.15;
 // 牌阵卡牌的基础高度
@@ -48,8 +54,9 @@ const FAN_FADE_IN_DEG = 36;
 const FAN_FADE_OUT_DEG = 47;
 // 聚焦卡牌的抬升高度
 const FOCUS_LIFT_Y = 0.42;
-// 聚焦卡牌向镜头方向推进的距离
-const FOCUS_LIFT_Z = 0.62;
+// 聚焦卡牌向镜头方向推进的距离。
+// 因为牌与牌之间重叠较多，这里给得比之前更大，让被聚焦的牌明确"抽出"于牌扇之外。
+const FOCUS_LIFT_Z = 0.78;
 
 // 三个桌面牌位的横向间距（横屏基准值）。
 // 竖屏时画面水平空间极窄，需要在 setViewportAspect 里收窄，否则两侧牌位会被裁掉。
@@ -112,14 +119,12 @@ export class Deck {
     // 保存已选中的卡牌（最多 3 张）
     this.selected = [];
 
-    // 聚焦索引的当前值（浮点数，实现平滑滑动）
+    // 聚焦索引的当前值（浮点数，实现平滑滑动）。
+    // 注意：这是一个「环形无限」索引——可以任意增减，不设上下限。
+    // 它每变化 FAN_COUNT，整副牌在视觉上正好平移一圈，因此永远滑不到尽头。
     this.focus = 0;
-    // 聚焦索引的目标值（整数）
+    // 聚焦索引的目标值（整数，同样无上下限）
     this.focusTarget = 0;
-    // 聚焦可移动的范围（留出边距，保证视野内始终有牌）
-    this.focusMin = Math.ceil(FAN_FADE_OUT_DEG / FAN_STEP_DEG);
-    // 聚焦上限
-    this.focusMax = FAN_COUNT - 1 - this.focusMin;
 
     // 复用的临时对象，避免每帧新建导致 GC 抖动
     this._tmpVec = new THREE.Vector3();
@@ -127,6 +132,13 @@ export class Deck {
     this._tmpQuat = new THREE.Quaternion();
     // 临时欧拉角
     this._tmpEuler = new THREE.Euler();
+
+    // ------------------------------------------------------------------
+    // 共享材质：78 张牌如果每张都持有自己的材质，会产生 150 多个
+    // MeshPhysicalMaterial 实例，白白吃掉一批 uniform 内存。
+    // 牌体、牌背、以及未翻开时的牌面占位，都做成全副共用的单例。
+    // （已翻开的牌面贴图各不相同，那部分仍由每张牌按需创建。）
+    // ------------------------------------------------------------------
 
     // 共享的牌体材质：78 张牌的金色金属边完全一致
     this.bodyMaterial = new THREE.MeshPhysicalMaterial({
@@ -149,6 +161,30 @@ export class Deck {
     // 牌背贴图（全副共用）
     this.backTexture = null;
 
+    // 共享的牌背材质：所有牌背朝上的牌共用同一份材质
+    this.backMaterial = new THREE.MeshPhysicalMaterial({
+      // 基础色为白色，只让贴图决定颜色
+      color: 0xffffff,
+      // 金属度偏低：卡纸是介质而不是金属，金属度太高会让贴图被环境反射冲淡
+      metalness: 0.3,
+      // 粗糙度中等，保留一点覆膜卡牌的光泽
+      roughness: 0.52,
+      // 清漆层只留一点点，太强会在聚光灯下糊成一片白
+      clearcoat: 0.35,
+      // 清漆粗糙度偏高，把高光打散
+      clearcoatRoughness: 0.5,
+    });
+
+    // 共享的牌面占位材质：牌未翻开时不渲染正面，用一个 1×1 的暗色贴图占位即可
+    this.facePlaceholderMaterial = new THREE.MeshPhysicalMaterial({
+      // 极暗的底色，即使被瞥见也不突兀
+      color: 0x1a1420,
+      // 近乎纯介质
+      metalness: 0.02,
+      // 粗糙度偏高，模拟纸张
+      roughness: 0.8,
+    });
+
     // 三个牌位当前的横向位置（会随视口比例变化）
     this.slotX = [-SLOT_SPREAD_LANDSCAPE, 0, SLOT_SPREAD_LANDSCAPE];
 
@@ -168,13 +204,19 @@ export class Deck {
   async build(onProgress) {
     // 生成牌背贴图
     this.backTexture = this.textures.createCardBack();
+    // 挂到共享牌背材质上。
+    // 这一步很容易漏：共享材质是整副牌共用的，牌背贴图必须显式赋给它，
+    // 否则所有牌背都会渲染成没有贴图的纯色平面。
+    this.backMaterial.map = this.backTexture;
+    // 贴图是新建的，需要触发一次材质重新编译
+    this.backMaterial.needsUpdate = true;
     // 汇报第一步进度
     if (onProgress) onProgress(0.2);
     // 让出主线程一帧，保证加载动画不卡顿
     await new Promise((r) => requestAnimationFrame(r));
 
-    // 洗牌并取前 32 张作为牌阵
-    const deck = createShuffledDeck().slice(0, FAN_COUNT);
+    // 洗牌：整副 78 张全部铺进牌阵，不做任何截取
+    const deck = createShuffledDeck();
 
     // 逐张创建卡牌实例
     for (let i = 0; i < deck.length; i++) {
@@ -186,6 +228,10 @@ export class Deck {
         backTexture: this.backTexture,
         // 注入共享牌体材质
         bodyMaterial: this.bodyMaterial,
+        // 注入共享牌背材质
+        backMaterial: this.backMaterial,
+        // 注入共享牌面占位材质
+        facePlaceholderMaterial: this.facePlaceholderMaterial,
       });
       // 注入相机引用，供光晕做公告板对齐
       card.setCameraRef(this.camera);
@@ -204,8 +250,8 @@ export class Deck {
       }
     }
 
-    // 初始聚焦在中间偏后的位置，让构图均衡
-    this.focus = Math.round((this.focusMin + this.focusMax) / 2);
+    // 初始聚焦在牌阵的中间位置，让构图均衡
+    this.focus = Math.floor(FAN_COUNT / 2);
     // 目标与当前保持一致
     this.focusTarget = this.focus;
 
@@ -220,7 +266,7 @@ export class Deck {
     if (onProgress) onProgress(0.86);
 
     // 首帧先把所有卡牌摆到正确位置，避免出现从原点散开的现象
-    this._layoutCards(0);
+    this._layoutCards();
     // 直接同步一次位姿（跳过阻尼过程）
     this.cards.forEach((card) => {
       // 位置直接对齐
@@ -505,60 +551,55 @@ export class Deck {
 
   /**
    * 依据当前的聚焦索引，计算并写入所有卡牌的目标位姿。
-   * @param {number} dt 帧间隔（秒），传给聚焦程度的阻尼计算
    */
-  _layoutCards(dt) {
+  _layoutCards() {
     // 遍历牌阵中的全部卡牌
     for (let i = 0; i < this.cards.length; i++) {
       // 取出卡牌
       const card = this.cards[i];
       // 已经飞走或落位的牌不再参与布局
       if (card.state !== 'fan') continue;
-      // 计算相对角度（角度制），并取最短路径
+
+      // 计算相对角度：折算到 (-180, 180] 区间。
+      // 这一步是无限滑动的核心——步长乘 78 恰好是 360 度，
+      // 所以「牌的序号」与「相对角度」是一一对应的，环形滚动不会出现两张牌撞在一起。
       const relDeg = wrapDegrees((i - this.focus) * FAN_STEP_DEG);
       // 转为弧度
       const rel = (relDeg * Math.PI) / 180;
-      // 取绝对值用于可见性判定
+      // 取绝对值用于渐隐判定
       const absDeg = Math.abs(relDeg);
 
-      // ---- 可见性与渐隐系数 ----
-      // 超出完全隐去角度的牌直接隐藏
-      if (absDeg >= FAN_FADE_OUT_DEG) {
-        // 隐藏
-        card.visible = false;
-        // 聚焦程度归零
-        card.focusTarget = 0;
-        // 跳过后续计算
-        continue;
-      }
-      // 显示卡牌
-      card.visible = true;
-      // 计算渐隐系数：1 表示完全清晰，0 表示完全隐去
+      // ---- 渐隐系数：1 表示完全清晰，0 表示完全隐去 ----
       const fadeK = 1 - clamp((absDeg - FAN_FADE_IN_DEG) / (FAN_FADE_OUT_DEG - FAN_FADE_IN_DEG), 0, 1);
       // 用三次曲线让渐隐更柔和
       const softFade = Easing.easeInOutCubic(fadeK);
 
       // ---- 聚焦程度：以聚焦位置为中心的高斯核 ----
-      // 核宽取步长的 0.78 倍，保证只有当前牌和半途中的邻牌被点亮
-      const kernel = Math.exp(-Math.pow(rel / (FAN_STEP * 0.78), 2));
+      // 核宽取步长的 0.85 倍：因为步长很小（约 4.6 度），
+      // 这样会让聚焦点左右各约四五张牌都受到一点抬升，形成一道平滑流动的"波峰"。
+      const kernel = Math.exp(-Math.pow(rel / (FAN_STEP * 0.85), 2));
       // 乘以渐隐系数，边缘的牌不会被点亮
       card.focusTarget = kernel * softFade;
 
-      // ---- 计算目标位置 ----
-      // 目标位置：以 (0, FAN_BASE_Y, FAN_CENTER_Z) 为圆心，半径 FAN_RADIUS 的圆弧
+      // ---- 目标位置：以 (0, FAN_BASE_Y, FAN_CENTER_Z) 为圆心、FAN_RADIUS 为半径的圆弧 ----
       this._tmpVec.set(
         // x 分量由角度决定
         Math.sin(rel) * FAN_RADIUS,
         // y 分量在基础高度上叠加聚焦抬升
         FAN_BASE_Y + kernel * FOCUS_LIFT_Y,
-        // z 分量由角度决定，并叠加聚焦前推与边缘后退
+        // z 分量：圆弧纵深 + 聚焦前推 + 边缘后退
         FAN_CENTER_Z - Math.cos(rel) * FAN_RADIUS + kernel * FOCUS_LIFT_Z + (1 - softFade) * 1.5
       );
-      // 写入目标位置
-      card.setLayoutTarget(this._tmpVec, this._computeQuaternion(rel, card));
+      // 写入目标位姿。
+      // 注意：不可见的牌也照常计算，这样它们重新滑入视野时已经在正确位置上，
+      // 不会出现"从原点飞过来"的穿帮。
+      card.setLayoutTarget(this._tmpVec, this._computeQuaternion(rel));
 
-      // ---- 边缘缩放：让渐隐的牌同时缩小，视觉上自然“退场” ----
+      // ---- 边缘缩放：让渐隐的牌同时缩小，视觉上自然退场 ----
       card.layoutScale = 0.55 + softFade * 0.45;
+
+      // ---- 可见性：放在最后统一决定，避免因为提前 continue 而漏算位置 ----
+      card.visible = absDeg < FAN_FADE_OUT_DEG;
     }
   }
 
@@ -611,10 +652,25 @@ export class Deck {
    * @param {number} elapsed 累计运行时间（秒）
    */
   update(dt, elapsed) {
+    // ------------------------------------------------------------------
+    // 聚焦索引归一化。
+    // 78 张牌正好铺满一圈，因此把索引整体平移 78 在视觉上完全等价。
+    // 定期做一次归一化，可以让浮点数长期停留在小区间内，
+    // 避免用户长时间连续滑动后出现精度下降、卡牌抖动。
+    // ------------------------------------------------------------------
+    if (this.focusTarget >= FAN_COUNT || this.focusTarget < 0) {
+      // 计算需要平移的整数圈
+      const shift = Math.floor(this.focusTarget / FAN_COUNT) * FAN_COUNT;
+      // 目标索引平移
+      this.focusTarget -= shift;
+      // 当前阻尼值同步平移，保证插值过程不被打断
+      this.focus -= shift;
+    }
+
     // 聚焦索引平滑滑向目标值，制造轮盘滑动的过程
     this.focus = damp(this.focus, this.focusTarget, 0.000012, dt);
     // 依据最新的聚焦索引重算布局
-    this._layoutCards(dt);
+    this._layoutCards();
     // 逐张更新卡牌自身（补间、阻尼、漂浮、光晕）
     for (let i = 0; i < this.cards.length; i++) {
       // 更新卡牌
@@ -661,41 +717,38 @@ export class Deck {
 
   /**
    * 浏览牌阵：把聚焦索引移动指定的步数。
+   * 索引是环形的、无上下限的，因此无论朝哪个方向都能一直滑下去，
+   * 永远不会出现「滑到头」而停住的情况。
    * @param {number} steps 步数，正数向后移动，负数向前
    */
   browse(steps) {
-    // 计算新的目标索引
-    let next = this.focusTarget + steps;
-    // 跳过已经被选走的牌
-    next = this._skipTaken(next, Math.sign(steps) || 1);
-    // 夹紧到合法范围
-    this.focusTarget = clamp(next, this.focusMin, this.focusMax);
+    // 直接把步数累加到目标索引上（不做任何夹紧）
+    const raw = this.focusTarget + steps;
+    // 跳过已经被选走的牌位，落到下一个仍然在场的牌上
+    this.focusTarget = this._nextFree(raw, Math.sign(steps) || 1);
   }
 
   /**
-   * 从指定索引出发，跳过已选中的卡牌，找到下一个可用的索引。
-   * @param {number} index 起始索引
+   * 从指定逻辑索引出发，跳过已经被选走的卡牌，找到下一个仍然在场的索引。
+   * 逻辑索引可以任意正负，因此这里用恒正取模把它折算回 0~77 的物理牌上。
+   * @param {number} index 起始逻辑索引
    * @param {number} dir 搜索方向（1 或 -1）
-   * @returns {number} 可用的索引（若找不到则返回原索引）
+   * @returns {number} 可用的逻辑索引
    */
-  _skipTaken(index, dir) {
-    // 先夹紧
-    let idx = clamp(index, this.focusMin, this.focusMax);
-    // 最多尝试一整圈
-    for (let guard = 0; guard <= this.focusMax - this.focusMin + 1; guard++) {
+  _nextFree(index, dir) {
+    // 最多探查一整圈，保证不会死循环
+    for (let guard = 0; guard < FAN_COUNT; guard++) {
+      // 折算成物理下标
+      const physical = mod(index, FAN_COUNT);
       // 取出该位置的卡牌
-      const card = this.cards[idx];
-      // 该牌仍在牌阵中，可用
-      if (card && card.state === 'fan') return idx;
-      // 否则向后搜索
-      idx += dir;
-      // 越界则回卷
-      if (idx > this.focusMax) idx = this.focusMin;
-      // 越界则回卷
-      if (idx < this.focusMin) idx = this.focusMax;
+      const card = this.cards[physical];
+      // 仍在牌阵中即视为可用
+      if (card && card.state === 'fan') return index;
+      // 否则沿指定方向继续寻找
+      index += dir;
     }
-    // 全部被占用时返回夹紧后的索引
-    return clamp(index, this.focusMin, this.focusMax);
+    // 理论上不会走到这里（78 张牌不可能被选空），兜底返回原索引
+    return index;
   }
 
   /**
@@ -705,8 +758,8 @@ export class Deck {
   confirm() {
     // 已经选满三张则不再接受
     if (this.selected.length >= 3) return null;
-    // 取当前聚焦的卡牌
-    const card = this.cards[Math.round(this.focusTarget)];
+    // 取当前聚焦的卡牌：把无上下限的逻辑索引折算成物理下标
+    const card = this.cards[mod(Math.round(this.focusTarget), FAN_COUNT)];
     // 卡牌不存在或已离场则失败
     if (!card || card.state !== 'fan') return null;
 
@@ -823,6 +876,10 @@ export class Deck {
     this.cards.length = 0;
     // 释放牌体共享材质
     this.bodyMaterial.dispose();
+    // 释放牌背共享材质
+    this.backMaterial.dispose();
+    // 释放牌面占位共享材质
+    this.facePlaceholderMaterial.dispose();
     // 释放粒子几何体
     if (this.sparks) {
       // 释放几何体
